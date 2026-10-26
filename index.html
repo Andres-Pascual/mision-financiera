@@ -1,0 +1,798 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Misión Financiera: videojuego educativo de Ingeniería Económica.">
+<script>
+/* =====================================================================
+   CONFIGURACIÓN DE FIREBASE (salas en línea y ranking en vivo)
+   Pega aquí el objeto firebaseConfig de tu proyecto:
+   Consola de Firebase → Configuración del proyecto → Tus apps → Web.
+   Si lo dejas vacío, el juego funciona igual (Misión Exprés, Campaña y
+   Duelo de equipos); solo se desactivan las salas en línea.
+   ===================================================================== */
+window.FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDUxudsZiC305FJ3he-rKkD3q1FhJyshFQ",
+  authDomain: "mision-financiera-77a15.firebaseapp.com",
+  projectId: "mision-financiera-77a15",
+  storageBucket: "mision-financiera-77a15.firebasestorage.app",
+  messagingSenderId: "147154363865",
+  appId: "1:147154363865:web:5817c2892558974151a5c8"
+};
+</script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Misión Financiera</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: consola de mando — barra HUD superior fija, panel central de misión, rail lateral de telemetría (ranking) que se apila en móvil. Diseño oscuro deliberado (una sola apariencia). */
+:root{
+  --noche:#0A0F24; --panel:#111938; --panel2:#18224A; --linea:#2A3570;
+  --morado:#7C4DFF; --morado2:#B39DFF; --oro:#F2B705; --oro2:#FFE08A;
+  --texto:#E9ECFF; --tenue:#98A2CC; --ok:#2BD47D; --mal:#FF5470;
+  --display:"Chakra Petch","Segoe UI",system-ui,sans-serif;
+  --cuerpo:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{min-height:100%}
+body{background:var(--noche);color:var(--texto);font-family:var(--cuerpo);font-size:15px;line-height:1.5;
+  background-image:radial-gradient(circle at 80% -10%,rgba(124,77,255,.22),transparent 45%),
+  linear-gradient(rgba(42,53,112,.18) 1px,transparent 1px),linear-gradient(90deg,rgba(42,53,112,.18) 1px,transparent 1px);
+  background-size:auto,32px 32px,32px 32px;background-attachment:fixed}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--noche)}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--oro);outline-offset:2px}
+.hud{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:rgba(10,15,36,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--linea)}
+.hud-in{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+  padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.marca{font-family:var(--display);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:15px;display:flex;align-items:center;gap:10px;background:none;border:0;padding:0}
+.marca b{color:var(--oro)}
+.radar{width:26px;height:26px;border-radius:50%;border:1.5px solid var(--morado2);position:relative;overflow:hidden;flex:none}
+.radar::after{content:"";position:absolute;inset:0;background:conic-gradient(from 0deg,rgba(242,183,5,.7),transparent 25%);animation:giro 3s linear infinite}
+@keyframes giro{to{transform:rotate(1turn)}}
+.ticker{flex:1;min-width:0;overflow:hidden;white-space:nowrap;font-family:var(--mono);font-size:12px;color:var(--tenue)}
+.ticker span{display:inline-block;animation:tick 40s linear infinite;padding-left:100%}
+@keyframes tick{to{transform:translateX(-100%)}}
+.ticker em{color:var(--oro2);font-style:normal}
+.piloto{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--tenue)}
+.av{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;font-family:var(--display);font-weight:700;color:#0A0F24;flex:none}
+main{max-width:1180px;margin:0 auto;padding-block:24px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;line-height:1.15}
+h1{font-size:clamp(30px,5.4vw,56px);letter-spacing:.01em}
+h2{font-size:24px}
+h3{font-size:17px}
+.eti{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--morado2)}
+.tenue{color:var(--tenue)}
+.panel{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--linea);border-radius:14px;padding:20px;position:relative}
+.panel.marco::before,.panel.marco::after{content:"";position:absolute;width:14px;height:14px;border:2px solid var(--oro)}
+.panel.marco::before{top:-1px;left:-1px;border-right:0;border-bottom:0;border-radius:14px 0 0 0}
+.panel.marco::after{bottom:-1px;right:-1px;border-left:0;border-top:0;border-radius:0 0 14px 0}
+.btn{border:1px solid var(--linea);background:var(--panel2);border-radius:10px;padding:11px 18px;font-family:var(--display);font-weight:600;letter-spacing:.04em;transition:transform .12s,border-color .12s,background .12s}
+.btn:hover{border-color:var(--morado2)}
+.btn:active{transform:translateY(1px)}
+.btn.pri{background:var(--morado);border-color:var(--morado);color:#fff}
+.btn.pri:hover{background:#8E63FF}
+.btn.oro{background:var(--oro);border-color:var(--oro);color:#151000}
+.btn.chico{padding:7px 12px;font-size:13px}
+.btn[disabled]{opacity:.4;cursor:not-allowed}
+.fila{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.grid{display:grid;gap:16px}
+input[type=text],input[type=number],select,textarea{background:var(--noche);border:1px solid var(--linea);border-radius:9px;padding:10px 12px;width:100%}
+textarea{min-height:90px;font-family:var(--mono);font-size:13px}
+label{display:grid;gap:6px;font-size:13px;color:var(--tenue)}
+/* Inicio */
+.hero{display:grid;grid-template-columns:1.25fr 1fr;gap:28px;align-items:center}
+.hero p.lead{font-size:17px;color:var(--tenue);max-width:58ch;margin:14px 0 22px}
+.hero h1 .oro{color:var(--oro)}
+.consola{font-family:var(--mono);font-size:13px;display:grid;gap:8px}
+.consola .l{display:flex;justify-content:space-between;gap:12px;border-bottom:1px dashed var(--linea);padding-bottom:6px}
+.consola .l b{color:var(--oro2);font-weight:600}
+.mapa{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:28px}
+.nodo{text-align:left;background:var(--panel);border:1px solid var(--linea);border-radius:12px;padding:14px;display:grid;gap:6px;min-width:0}
+.nodo .n{font-family:var(--display);font-size:26px;color:var(--morado2);line-height:1}
+.nodo.bloq{opacity:.45}
+.nodo .med{font-family:var(--mono);font-size:11px;color:var(--oro)}
+.modos{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.modo{text-align:left;display:grid;gap:8px;align-content:start;min-width:0}
+.modo .dur{font-family:var(--mono);color:var(--oro2);font-size:12px}
+/* Juego */
+.juego{display:grid;grid-template-columns:1fr 290px;gap:20px;align-items:start}
+.barra{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;margin-bottom:14px}
+.vidas{display:flex;gap:4px}
+.vida{width:20px;height:18px}
+.chip{font-family:var(--mono);font-size:12px;border:1px solid var(--linea);border-radius:99px;padding:3px 10px;color:var(--tenue);white-space:nowrap}
+.chip.oro{color:var(--oro2);border-color:rgba(242,183,5,.5)}
+.chip.mor{color:var(--morado2);border-color:rgba(179,157,255,.5)}
+.reloj{width:74px;height:74px;flex:none;position:relative}
+.reloj svg{transform:rotate(-90deg)}
+.reloj .t{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--display);font-size:22px;font-weight:700}
+.reloj.critico .t{color:var(--mal)}
+.pregunta{font-size:clamp(17px,2.2vw,21px);font-weight:500;margin:10px 0 18px;max-width:70ch}
+.opciones{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.op{text-align:left;background:var(--noche);border:1px solid var(--linea);border-radius:12px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start;min-width:0}
+.op:hover:not([disabled]){border-color:var(--morado2);background:#0E1430}
+.op .k{font-family:var(--display);font-weight:700;color:var(--oro);flex:none;width:20px}
+.op .tx{min-width:0;overflow-wrap:anywhere}
+.op.bien{border-color:var(--ok);background:rgba(43,212,125,.12)}
+.op.malo{border-color:var(--mal);background:rgba(255,84,112,.12)}
+.op.fuera{opacity:.25}
+.op[disabled]{cursor:default}
+.poderes{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
+.poder{display:flex;align-items:center;gap:6px;border:1px solid rgba(179,157,255,.45);background:rgba(124,77,255,.12);border-radius:10px;padding:8px 11px;font-size:13px;font-weight:600}
+.poder.activo{border-color:var(--oro);background:rgba(242,183,5,.16);color:var(--oro2)}
+.poder[disabled]{opacity:.35;cursor:not-allowed}
+.feedback{margin-top:18px;border-radius:12px;padding:16px;border:1px solid;display:grid;gap:8px}
+.feedback.ok{border-color:var(--ok);background:rgba(43,212,125,.08)}
+.feedback.no{border-color:var(--mal);background:rgba(255,84,112,.08)}
+.feedback h3{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.pasos{font-family:var(--mono);font-size:13px;margin:0;padding-left:20px;display:grid;gap:3px;overflow-wrap:anywhere}
+.pista{margin-top:12px;font-family:var(--mono);font-size:13px;border-left:3px solid var(--oro);padding:8px 12px;background:rgba(242,183,5,.07)}
+.rail{display:grid;gap:16px;min-width:0}
+.rank{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.rank li{display:grid;grid-template-columns:24px 30px 1fr auto;gap:8px;align-items:center;padding:7px 8px;border-radius:9px;background:var(--noche);font-size:14px;min-width:0}
+.rank li.yo{outline:1px solid var(--oro)}
+.rank .pos{font-family:var(--display);color:var(--tenue);text-align:center}
+.rank .nom{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank .pts{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--oro2)}
+.rank .sub{display:block;font-size:11px;color:var(--tenue)}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--oro);color:#151000;font-family:var(--display);font-weight:700;padding:10px 18px;border-radius:12px;z-index:20;box-shadow:0 10px 30px rgba(0,0,0,.4);max-width:calc(100% - 32px)}
+/* Logros */
+.insignias{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
+.ins{display:grid;gap:6px;justify-items:start;padding:14px;border-radius:12px;background:var(--panel);border:1px solid var(--linea)}
+.ins.no{opacity:.4;filter:grayscale(1)}
+.ins svg{width:42px;height:42px}
+/* Admin */
+.tabla{overflow-x:auto;border:1px solid var(--linea);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--linea);vertical-align:top}
+th{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--tenue);background:var(--panel);position:sticky;top:0}
+td.enun{min-width:280px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.tab{border:1px solid var(--linea);background:transparent;border-radius:99px;padding:6px 14px;font-size:13px}
+.tab.on{background:var(--morado);border-color:var(--morado);color:#fff}
+.resultado-num{font-family:var(--display);font-size:clamp(40px,8vw,72px);color:var(--oro);line-height:1}
+.medalla{width:90px;height:90px}
+.codigo{font-family:var(--display);font-size:40px;letter-spacing:.3em;color:var(--oro)}
+@media (max-width:900px){
+  .hero,.juego{grid-template-columns:1fr}
+  .modos{grid-template-columns:1fr}
+  .mapa{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:560px){
+  .opciones{grid-template-columns:1fr}
+  .ticker{display:none}
+  .hud-in{justify-content:space-between}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+
+<header class="hud"><div class="hud-in">
+  <button class="marca" id="ir-inicio" type="button"><span class="radar" aria-hidden="true"></span><span>Misión <b>Financiera</b></span></button>
+  <div class="ticker" aria-hidden="true"><span>TASA REF. <em>11% EA</em> · <em>14% NMV</em> → 1,1667% mensual · <em>13% NTV</em> → 3,25% trimestral · <em>12% NSV</em> → 6% semestral · F = P(1 + i)<sup>n</sup> · P = A[1 − (1 + i)<sup>−n</sup>]/i · EA = (1 + j/m)<sup>m</sup> − 1 · iv = ia/(1 − ia)</span></div>
+  <div class="piloto" id="piloto"></div>
+</div></header>
+<main id="app"></main>
+<div class="toast" id="toast" hidden></div>
+
+<script type="application/json" id="banco-json">{"niveles": {"1": "Fundamentos del dinero e interés", "2": "Interés simple", "3": "Interés compuesto", "4": "Conversión de tasas", "5": "Valor presente y valor futuro", "6": "Anualidades vencidas", "7": "Anualidades anticipadas", "8": "Gran reto financiero"}, "preguntas": [{"id": "Q001", "nivel": 1, "tema": "Fundamentos del dinero e interés", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "¿Qué establece el principio del valor del dinero en el tiempo?", "opciones": ["Un peso futuro vale más porque se recibe después.", "El dinero solo cambia de valor por la inflación.", "Un peso hoy vale lo mismo que un peso dentro de un año.", "Un peso hoy vale más que un peso en el futuro, porque puede invertirse y generar rendimientos."], "correcta": 3, "feedback": ["Es al revés: recibir el dinero más tarde implica renunciar a los rendimientos que generaría mientras tanto.", "La inflación influye, pero el principio se basa sobre todo en el costo de oportunidad y el riesgo, incluso con inflación cero.", "Esto ignora el costo de oportunidad: el peso de hoy puede invertirse y valer más mañana.", "¡Correcto! El dinero disponible hoy tiene un costo de oportunidad: puede invertirse y crecer. Por eso, para comparar sumas en fechas distintas hay que llevarlas a una misma fecha usando una tasa de interés."], "explicacion": "El dinero disponible hoy tiene un costo de oportunidad: puede invertirse y crecer. Por eso, para comparar sumas en fechas distintas hay que llevarlas a una misma fecha usando una tasa de interés.", "pasos": []}, {"id": "Q002", "nivel": 1, "tema": "Fundamentos del dinero e interés", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "¿Qué es el interés?", "opciones": ["El precio que se paga por usar dinero ajeno durante un tiempo.", "La variación general de precios de la economía.", "El impuesto que cobra el banco por cada transacción.", "El capital que se presta inicialmente."], "correcta": 0, "feedback": ["¡Correcto! El interés es la compensación que recibe quien presta (o el costo de quien pide prestado) por el uso del dinero durante un periodo.", "Esa es la inflación, un concepto distinto aunque relacionado.", "Un impuesto o comisión no es interés; el interés remunera el uso del dinero en el tiempo.", "Ese es el capital o principal (P); el interés es lo que se paga ADICIONAL por usarlo."], "explicacion": "El interés es la compensación que recibe quien presta (o el costo de quien pide prestado) por el uso del dinero durante un periodo.", "pasos": []}, {"id": "Q003", "nivel": 1, "tema": "Fundamentos del dinero e interés", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "La tasa de interés se define como:", "opciones": ["La relación entre el interés generado en un periodo y el capital, expresada en porcentaje.", "El valor en pesos del interés ganado.", "El número de periodos de la operación.", "El monto final acumulado al terminar el plazo."], "correcta": 0, "feedback": ["¡Correcto! i = I / P para un periodo. Por ejemplo, si 1.000.000 genera 20.000 en un mes, la tasa es 2% mensual.", "Ese es el interés (I), un valor absoluto. La tasa es relativa: I dividido por P.", "Eso es n. La tasa expresa cuánto rinde el capital por periodo.", "Ese es el valor futuro (F), no la tasa."], "explicacion": "i = I / P para un periodo. Por ejemplo, si 1.000.000 genera 20.000 en un mes, la tasa es 2% mensual.", "pasos": []}, {"id": "Q004", "nivel": 1, "tema": "Fundamentos del dinero e interés", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "En la notación de Ingeniería Económica, ¿qué representa la letra P?", "opciones": ["El número de periodos.", "El valor acumulado al final del plazo.", "El valor presente: una cantidad ubicada en el momento cero.", "El pago periódico de una serie uniforme."], "correcta": 2, "feedback": ["El número de periodos se denota con n.", "Ese es F, el valor futuro.", "¡Correcto! P = valor presente, F = valor futuro, A = pago periódico (anualidad), i = tasa por periodo, n = número de periodos.", "El pago periódico se denota con A."], "explicacion": "P = valor presente, F = valor futuro, A = pago periódico (anualidad), i = tasa por periodo, n = número de periodos.", "pasos": []}, {"id": "Q005", "nivel": 1, "tema": "Fundamentos del dinero e interés", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "¿Qué es el costo de oportunidad del dinero?", "opciones": ["El interés que cobra cualquier banco.", "Una pérdida contable registrada en el balance.", "El costo total de la inversión elegida.", "El rendimiento de la mejor alternativa a la que se renuncia al elegir una inversión."], "correcta": 3, "feedback": ["Un banco puede ser una alternativa, pero el costo de oportunidad es la MEJOR alternativa sacrificada.", "El costo de oportunidad es económico, no aparece como pérdida contable.", "Ese es el costo de la inversión, no lo que se deja de ganar en la alternativa.", "¡Correcto! Si eliges un proyecto, dejas de ganar lo que te daría la mejor alternativa disponible; esa tasa suele usarse como tasa de descuento (TIO)."], "explicacion": "Si eliges un proyecto, dejas de ganar lo que te daría la mejor alternativa disponible; esa tasa suele usarse como tasa de descuento (TIO).", "pasos": []}, {"id": "Q006", "nivel": 1, "tema": "Fundamentos del dinero e interés", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "En un diagrama de flujo de caja, por convención:", "opciones": ["Las flechas representan la tasa de interés de cada periodo.", "Las flechas hacia arriba son egresos y hacia abajo ingresos.", "Las flechas hacia arriba son ingresos y las flechas hacia abajo son egresos.", "Solo se dibujan los ingresos, nunca los egresos."], "correcta": 2, "feedback": ["Las flechas representan flujos de dinero; la tasa se anota aparte.", "Es la convención invertida; lo usual es arriba = ingreso, abajo = egreso.", "¡Correcto! El diagrama ubica en una línea de tiempo cada flujo; arriba lo que entra y abajo lo que sale, desde el punto de vista de quien analiza.", "Se dibujan ambos para ver el panorama completo de la operación."], "explicacion": "El diagrama ubica en una línea de tiempo cada flujo; arriba lo que entra y abajo lo que sale, desde el punto de vista de quien analiza.", "pasos": []}, {"id": "Q007", "nivel": 1, "tema": "Fundamentos del dinero e interés", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "Dos cantidades ubicadas en fechas distintas son financieramente equivalentes cuando:", "opciones": ["La inflación del periodo es cero.", "Tienen exactamente el mismo valor en pesos.", "Tienen el mismo valor al llevarlas a una fecha común con una tasa dada.", "Se pagan dentro del mismo mes."], "correcta": 2, "feedback": ["Aun sin inflación existe costo de oportunidad; la clave es la tasa de interés.", "Mismo valor nominal en fechas distintas NO es equivalente, porque el dinero cambia de valor en el tiempo.", "¡Correcto! La equivalencia depende de la tasa: 1.000.000 hoy y 1.100.000 en un año son equivalentes solo si la tasa es 10% anual.", "La equivalencia no depende del mes, sino de la tasa y la fecha focal."], "explicacion": "La equivalencia depende de la tasa: 1.000.000 hoy y 1.100.000 en un año son equivalentes solo si la tasa es 10% anual.", "pasos": []}, {"id": "Q008", "nivel": 1, "tema": "Fundamentos del dinero e interés", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "¿Cuál de los siguientes factores NO explica el valor del dinero en el tiempo?", "opciones": ["La denominación de los billetes con que se paga.", "El riesgo de no recibir el dinero.", "La inflación.", "El costo de oportunidad."], "correcta": 0, "feedback": ["¡Correcto! El valor del dinero en el tiempo se explica por el costo de oportunidad, la inflación y el riesgo. Pagar con billetes de 50.000 o de 100.000 no cambia nada.", "El riesgo sí influye: un pago futuro es incierto y por eso vale menos hoy.", "La inflación sí reduce el poder adquisitivo del dinero futuro.", "Es el factor central: el dinero de hoy puede invertirse."], "explicacion": "El valor del dinero en el tiempo se explica por el costo de oportunidad, la inflación y el riesgo. Pagar con billetes de 50.000 o de 100.000 no cambia nada.", "pasos": []}, {"id": "Q009", "nivel": 1, "tema": "Fundamentos del dinero e interés", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "Inviertes $1.000.000 y al cabo de un año recibes $1.080.000. ¿Cuál fue la tasa de interés anual?", "opciones": ["80,00%", "8,00%", "0,80%", "108,00%"], "correcta": 1, "feedback": ["Revisa la división: 80.000/1.000.000 = 0,08, que equivale a 8%, no a 80%.", "¡Correcto! Solución: I = F − P = 1.080.000 − 1.000.000 = 80.000 → i = I / P = 80.000 / 1.000.000 = 0,08 = 8% anual", "Corriste la coma de más: 0,08 son 8%, no 0,8%.", "1,08 es el factor (1 + i); la tasa es 1,08 − 1 = 0,08."], "explicacion": "Solución: I = F − P = 1.080.000 − 1.000.000 = 80.000 → i = I / P = 80.000 / 1.000.000 = 0,08 = 8% anual", "pasos": ["I = F − P = 1.080.000 − 1.000.000 = 80.000", "i = I / P = 80.000 / 1.000.000 = 0,08 = 8% anual"]}, {"id": "Q010", "nivel": 1, "tema": "Fundamentos del dinero e interés", "tipo": "contrarreloj", "tiempo": 20, "puntos": 150, "enunciado": "Un capital de $2.500.000 gana 2% mensual. ¿Cuánto interés genera en un mes?", "opciones": ["$5.000", "$500.000", "$50.000", "$2.550.000"], "correcta": 2, "feedback": ["El 2% en decimal es 0,02, no 0,002.", "Usaste 0,2 en lugar de 0,02: el 2% es 0,02.", "¡Correcto! Solución: I = P · i = 2.500.000 × 0,02 = 50.000", "Ese es el monto total (P + I), no solo el interés."], "explicacion": "Solución: I = P · i = 2.500.000 × 0,02 = 50.000", "pasos": ["I = P · i = 2.500.000 × 0,02 = 50.000"]}, {"id": "Q011", "nivel": 1, "tema": "Fundamentos del dinero e interés", "tipo": "contrarreloj", "tiempo": 20, "puntos": 150, "enunciado": "¿Cómo se expresa una tasa de 1,5% en forma decimal?", "opciones": ["0,0015", "0,0150", "0,1500", "1,5000"], "correcta": 1, "feedback": ["Dividiste entre 1.000; para pasar de % a decimal se divide entre 100.", "¡Correcto! Solución: 1,5% = 1,5 / 100 = 0,015", "Eso sería 15%. Divide entre 100: 1,5/100 = 0,015.", "Ese es el número en porcentaje; en decimal se divide entre 100."], "explicacion": "Solución: 1,5% = 1,5 / 100 = 0,015", "pasos": ["1,5% = 1,5 / 100 = 0,015"]}, {"id": "Q012", "nivel": 1, "tema": "Fundamentos del dinero e interés", "tipo": "caso", "tiempo": 120, "puntos": 250, "enunciado": "Te ofrecen $1.000.000 hoy o $1.100.000 dentro de un año. Tu tasa de oportunidad es 12% anual. ¿Qué te conviene?", "opciones": ["Recibir $1.100.000, porque su VP es $1.232.000", "Recibir $1.100.000 en un año, porque es más dinero", "Recibir $1.000.000 hoy, porque el VP de $1.100.000 es $982.142,86", "Es indiferente, ambas valen lo mismo"], "correcta": 2, "feedback": ["Multiplicaste por 1,12 (llevaste al futuro); para el VP se divide.", "Comparar valores nominales de fechas distintas ignora el valor del dinero en el tiempo; a 12% su VP es solo $982.142,86.", "¡Correcto! Solución: Llevar el pago futuro a hoy: P = 1.100.000 / (1,12)^1 = 982.142,86 → Comparar en la misma fecha: 1.000.000 > 982.142,86 → Conviene recibir el dinero hoy", "Serían equivalentes solo con una tasa del 10%; con 12% el pago futuro vale menos hoy."], "explicacion": "Solución: Llevar el pago futuro a hoy: P = 1.100.000 / (1,12)^1 = 982.142,86 → Comparar en la misma fecha: 1.000.000 > 982.142,86 → Conviene recibir el dinero hoy", "pasos": ["Llevar el pago futuro a hoy: P = 1.100.000 / (1,12)^1 = 982.142,86", "Comparar en la misma fecha: 1.000.000 > 982.142,86", "Conviene recibir el dinero hoy"]}, {"id": "Q013", "nivel": 2, "tema": "Interés simple", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "En el interés simple, el interés de cada periodo se calcula sobre:", "opciones": ["El capital inicial, siempre el mismo en todos los periodos.", "Un capital que crece con la inflación.", "El saldo acumulado (capital más intereses anteriores).", "El valor futuro de la operación."], "correcta": 0, "feedback": ["¡Correcto! En interés simple los intereses NO se capitalizan: I = P·i·n y el interés de cada periodo es constante.", "El interés simple no ajusta el capital por inflación.", "Eso describe el interés compuesto.", "El interés se calcula sobre P, no sobre F."], "explicacion": "En interés simple los intereses NO se capitalizan: I = P·i·n y el interés de cada periodo es constante.", "pasos": []}, {"id": "Q014", "nivel": 2, "tema": "Interés simple", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "¿Cuál es la fórmula del valor futuro con interés simple?", "opciones": ["F = P / (1 + i·n)", "F = P · i · n", "F = P (1 + i)^n", "F = P (1 + i·n)"], "correcta": 3, "feedback": ["Esa expresión despeja P a partir de F, no calcula F.", "Eso es solo el interés (I), le falta sumar el capital.", "Esa es la fórmula del interés compuesto.", "¡Correcto! El monto es el capital más el interés: F = P + P·i·n = P(1 + i·n)."], "explicacion": "El monto es el capital más el interés: F = P + P·i·n = P(1 + i·n).", "pasos": []}, {"id": "Q015", "nivel": 2, "tema": "Interés simple", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "Al graficar el monto acumulado con interés simple en el tiempo se obtiene:", "opciones": ["Una curva decreciente.", "Una línea horizontal.", "Una curva exponencial.", "Una línea recta (crecimiento lineal)."], "correcta": 3, "feedback": ["El monto con interés positivo nunca disminuye.", "Eso implicaría que no se generan intereses.", "Esa forma corresponde al interés compuesto.", "¡Correcto! Como el interés por periodo es constante, F = P + P·i·n crece en forma lineal con n."], "explicacion": "Como el interés por periodo es constante, F = P + P·i·n crece en forma lineal con n.", "pasos": []}, {"id": "Q016", "nivel": 2, "tema": "Interés simple", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "El interés simple 'comercial' u 'ordinario' utiliza un año de:", "opciones": ["360 días.", "365 días.", "366 días siempre.", "12 días."], "correcta": 0, "feedback": ["¡Correcto! El interés comercial usa 360 días (12 meses de 30). El interés exacto o real usa 365 (o 366) días.", "Ese es el interés exacto o real.", "Solo los años bisiestos tienen 366 días, y aplica al interés exacto.", "El año tiene 12 meses, no 12 días."], "explicacion": "El interés comercial usa 360 días (12 meses de 30). El interés exacto o real usa 365 (o 366) días.", "pasos": []}, {"id": "Q017", "nivel": 2, "tema": "Interés simple", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "Con interés simple, si se duplica el tiempo de la inversión, el interés ganado:", "opciones": ["Se duplica.", "Se cuadruplica.", "Permanece igual.", "Aumenta más del doble."], "correcta": 0, "feedback": ["¡Correcto! I = P·i·n es proporcional a n: si n se duplica, I se duplica.", "Eso no ocurre ni con interés simple ni compuesto en plazos usuales.", "El interés sí depende del tiempo.", "Eso pasa con el interés compuesto, no con el simple."], "explicacion": "I = P·i·n es proporcional a n: si n se duplica, I se duplica.", "pasos": []}, {"id": "Q018", "nivel": 2, "tema": "Interés simple", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "Se prestan $5.000.000 al 1,5% mensual simple durante 8 meses. ¿Cuánto interés se genera?", "opciones": ["$632.462,93", "$5.600.000,00", "$60.000,00", "$600.000,00"], "correcta": 3, "feedback": ["Ese resultado usa interés compuesto; el enunciado indica interés simple.", "Ese es el monto F; el interés es solo F − P.", "Revisa la multiplicación: 5.000.000 × 0,015 = 75.000; × 8 = 600.000.", "¡Correcto! Solución: I = P · i · n → I = 5.000.000 × 0,015 × 8 = 600.000"], "explicacion": "Solución: I = P · i · n → I = 5.000.000 × 0,015 × 8 = 600.000", "pasos": ["I = P · i · n", "I = 5.000.000 × 0,015 × 8 = 600.000"]}, {"id": "Q019", "nivel": 2, "tema": "Interés simple", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "¿Cuál es el valor futuro de $3.200.000 invertidos al 18% anual simple durante 9 meses?", "opciones": ["$432.000,00", "$3.622.942,85", "$3.632.000,00", "$8.384.000,00"], "correcta": 2, "feedback": ["Ese es solo el interés; falta sumar el capital.", "Usaste interés compuesto; el enunciado indica interés simple.", "¡Correcto! Solución: n = 9/12 = 0,75 años → F = P(1 + i·n) = 3.200.000 × (1 + 0,18 × 0,75) → F = 3.200.000 × 1,135 = 3.632.000", "Tomaste n = 9 años; el plazo es 9 meses = 0,75 años."], "explicacion": "Solución: n = 9/12 = 0,75 años → F = P(1 + i·n) = 3.200.000 × (1 + 0,18 × 0,75) → F = 3.200.000 × 1,135 = 3.632.000", "pasos": ["n = 9/12 = 0,75 años", "F = P(1 + i·n) = 3.200.000 × (1 + 0,18 × 0,75)", "F = 3.200.000 × 1,135 = 3.632.000"]}, {"id": "Q020", "nivel": 2, "tema": "Interés simple", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "¿Cuánto debe invertirse hoy al 2% mensual simple para tener $7.540.000 en 10 meses?", "opciones": ["$6.185.426,18", "$6.283.333,33", "$6.032.000,00", "$1.508.000,00"], "correcta": 1, "feedback": ["Ese cálculo es con interés compuesto.", "¡Correcto! Solución: P = F / (1 + i·n) → P = 7.540.000 / (1 + 0,02 × 10) = 7.540.000 / 1,2 → P = 6.283.333,33", "Aplicaste descuento comercial (F·(1 − i·n)); el VP con interés simple se obtiene dividiendo.", "Eso es el interés sobre F, no el valor presente."], "explicacion": "Solución: P = F / (1 + i·n) → P = 7.540.000 / (1 + 0,02 × 10) = 7.540.000 / 1,2 → P = 6.283.333,33", "pasos": ["P = F / (1 + i·n)", "P = 7.540.000 / (1 + 0,02 × 10) = 7.540.000 / 1,2", "P = 6.283.333,33"]}, {"id": "Q021", "nivel": 2, "tema": "Interés simple", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "Un capital de $4.000.000 se convierte en $4.720.000 en 12 meses con interés simple. ¿Cuál es la tasa mensual?", "opciones": ["18,0000%", "0,1500%", "1,5000%", "1,3888%"], "correcta": 2, "feedback": ["18% es la tasa de todo el año; debes dividir entre los 12 meses.", "Revisa los decimales: 0,015 es 1,5%.", "¡Correcto! Solución: I = 4.720.000 − 4.000.000 = 720.000 → i = I / (P·n) = 720.000 / (4.000.000 × 12) → i = 0,015 = 1,5% mensual", "Ese cálculo es de interés compuesto."], "explicacion": "Solución: I = 4.720.000 − 4.000.000 = 720.000 → i = I / (P·n) = 720.000 / (4.000.000 × 12) → i = 0,015 = 1,5% mensual", "pasos": ["I = 4.720.000 − 4.000.000 = 720.000", "i = I / (P·n) = 720.000 / (4.000.000 × 12)", "i = 0,015 = 1,5% mensual"]}, {"id": "Q022", "nivel": 2, "tema": "Interés simple", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "¿En cuántos meses $6.000.000 al 2% mensual simple llegan a $7.440.000?", "opciones": ["12,00 meses", "10,86 meses", "24,00 meses", "6,00 meses"], "correcta": 0, "feedback": ["¡Correcto! Solución: F/P = 7.440.000 / 6.000.000 = 1,24 → n = (F/P − 1) / i = 0,24 / 0,02 → n = 12 meses", "Usaste la fórmula de tiempo del interés compuesto.", "Revisa la división: 0,24 / 0,02 = 12.", "Revisa la división: 0,24 / 0,02 = 12."], "explicacion": "Solución: F/P = 7.440.000 / 6.000.000 = 1,24 → n = (F/P − 1) / i = 0,24 / 0,02 → n = 12 meses", "pasos": ["F/P = 7.440.000 / 6.000.000 = 1,24", "n = (F/P − 1) / i = 0,24 / 0,02", "n = 12 meses"]}, {"id": "Q023", "nivel": 2, "tema": "Interés simple", "tipo": "contrarreloj", "tiempo": 20, "puntos": 150, "enunciado": "¿Cuánto interés generan $1.000.000 al 3% mensual simple en 4 meses?", "opciones": ["$120.000", "$125.509", "$1.120.000", "$30.000"], "correcta": 0, "feedback": ["¡Correcto! Solución: I = 1.000.000 × 0,03 × 4 = 120.000", "Ese es el interés compuesto.", "Ese es el monto F; el interés es 120.000.", "Ese es el interés de un solo mes; multiplica por 4."], "explicacion": "Solución: I = 1.000.000 × 0,03 × 4 = 120.000", "pasos": ["I = 1.000.000 × 0,03 × 4 = 120.000"]}, {"id": "Q024", "nivel": 2, "tema": "Interés simple", "tipo": "caso", "tiempo": 120, "puntos": 250, "enunciado": "Don Pepe presta $2.000.000 al 24% anual simple durante 90 días (interés comercial). ¿Cuánto interés recibe?", "opciones": ["$120.000,00", "$118.356,16", "$240.000,00", "$480.000,00"], "correcta": 0, "feedback": ["¡Correcto! Solución: Interés comercial: año de 360 días → I = P · i · (d/360) = 2.000.000 × 0,24 × 90/360 → I = 120.000", "Usaste 365 días (interés exacto); el enunciado pide interés comercial (360).", "Revisa: 90 días son 3 meses = 0,25 años.", "Ese es el interés de todo un año, no de 90 días."], "explicacion": "Solución: Interés comercial: año de 360 días → I = P · i · (d/360) = 2.000.000 × 0,24 × 90/360 → I = 120.000", "pasos": ["Interés comercial: año de 360 días", "I = P · i · (d/360) = 2.000.000 × 0,24 × 90/360", "I = 120.000"]}, {"id": "Q025", "nivel": 3, "tema": "Interés compuesto", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "¿Qué caracteriza al interés compuesto?", "opciones": ["Los intereses se retiran al final de cada periodo.", "Los intereses se suman al capital y generan nuevos intereses en los periodos siguientes.", "El interés es el mismo en todos los periodos.", "Solo se usa en créditos de corto plazo."], "correcta": 1, "feedback": ["Si se retiran, no se capitalizan; el modelo sería de interés simple.", "¡Correcto! Es 'interés sobre interés': F = P(1 + i)^n. El capital crece de forma exponencial.", "Eso es interés simple.", "Se usa en casi todas las operaciones financieras, de corto y largo plazo."], "explicacion": "Es 'interés sobre interés': F = P(1 + i)^n. El capital crece de forma exponencial.", "pasos": []}, {"id": "Q026", "nivel": 3, "tema": "Interés compuesto", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "¿Cuál es la fórmula del valor futuro con interés compuesto?", "opciones": ["F = P · i^n", "F = P (1 + i)^n", "F = P (1 + i·n)", "F = P (1 + n)^i"], "correcta": 1, "feedback": ["Falta sumar 1 a la tasa; así el resultado no tiene sentido económico.", "¡Correcto! Cada periodo multiplica el saldo por (1 + i); tras n periodos: P(1 + i)^n.", "Esa es la fórmula del interés simple.", "Los papeles de i y n están invertidos."], "explicacion": "Cada periodo multiplica el saldo por (1 + i); tras n periodos: P(1 + i)^n.", "pasos": []}, {"id": "Q027", "nivel": 3, "tema": "Interés compuesto", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "La capitalización es:", "opciones": ["Descontar un valor futuro al presente.", "Retirar los intereses al final del periodo.", "Calcular la inflación del periodo.", "El proceso de sumar los intereses al capital para que también generen intereses."], "correcta": 3, "feedback": ["Eso es actualizar o descontar.", "Retirarlos es lo contrario: evita la capitalización.", "La capitalización no tiene relación directa con la inflación.", "¡Correcto! Capitalizar es convertir los intereses en capital al final de cada periodo de capitalización."], "explicacion": "Capitalizar es convertir los intereses en capital al final de cada periodo de capitalización.", "pasos": []}, {"id": "Q028", "nivel": 3, "tema": "Interés compuesto", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "Para un mismo capital, tasa y un plazo mayor a un periodo, el interés compuesto frente al simple genera:", "opciones": ["Exactamente los mismos intereses.", "Más intereses.", "Menos intereses.", "Depende del banco, no del modelo."], "correcta": 1, "feedback": ["Solo son iguales cuando n = 1.", "¡Correcto! Desde el segundo periodo, el compuesto calcula interés sobre un saldo mayor, por eso supera al simple.", "Ocurre lo contrario cuando n > 1.", "La diferencia es matemática, no depende de la entidad."], "explicacion": "Desde el segundo periodo, el compuesto calcula interés sobre un saldo mayor, por eso supera al simple.", "pasos": []}, {"id": "Q029", "nivel": 3, "tema": "Interés compuesto", "tipo": "contrarreloj", "tiempo": 20, "puntos": 150, "enunciado": "Según la regla del 72, con una tasa del 8% anual compuesta, ¿en cuántos años aproximadamente se duplica el dinero?", "opciones": ["9 años.", "8 años.", "576 años.", "12,5 años."], "correcta": 0, "feedback": ["¡Correcto! Regla del 72: años ≈ 72 / tasa(%) = 72 / 8 = 9. (El valor exacto es ln2/ln1,08 ≈ 9,01 años.)", "Revisa la regla: se divide 72 entre la tasa, 72/8 = 9.", "Se divide 72 entre 8, no se multiplica.", "Eso sería con interés simple (100/8). Con compuesto se duplica antes."], "explicacion": "Regla del 72: años ≈ 72 / tasa(%) = 72 / 8 = 9. (El valor exacto es ln2/ln1,08 ≈ 9,01 años.)", "pasos": []}, {"id": "Q030", "nivel": 3, "tema": "Interés compuesto", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "¿Cuál es el valor futuro de $5.000.000 al 1,2% mensual compuesto durante 24 meses?", "opciones": ["$6.657.364,02", "$6.440.000,00", "$5.120.720,00", "$1.440.000,00"], "correcta": 0, "feedback": ["¡Correcto! Solución: F = P(1 + i)^n → (1,012)^24 = 1,331473 → F = 5.000.000 × 1,331473 = 6.657.364,02", "Ese es el resultado con interés simple.", "Usaste n = 2 (años); con tasa mensual n debe estar en meses: 24.", "Eso es el interés simple, sin capital."], "explicacion": "Solución: F = P(1 + i)^n → (1,012)^24 = 1,331473 → F = 5.000.000 × 1,331473 = 6.657.364,02", "pasos": ["F = P(1 + i)^n", "(1,012)^24 = 1,331473", "F = 5.000.000 × 1,331473 = 6.657.364,02"]}, {"id": "Q031", "nivel": 3, "tema": "Interés compuesto", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "¿Cuánto debes invertir hoy al 10% anual compuesto para tener $20.000.000 en 3 años?", "opciones": ["$26.620.000,00", "$15.026.296,02", "$15.384.615,38", "$14.580.000,00"], "correcta": 1, "feedback": ["Multiplicaste: eso lleva el valor más al futuro.", "¡Correcto! Solución: P = F / (1 + i)^n → P = 20.000.000 / (1,10)^3 = 20.000.000 / 1,331 → P = 15.026.296,02", "Usaste interés simple.", "Descontar no es multiplicar por (1 − i)^n; se divide entre (1 + i)^n."], "explicacion": "Solución: P = F / (1 + i)^n → P = 20.000.000 / (1,10)^3 = 20.000.000 / 1,331 → P = 15.026.296,02", "pasos": ["P = F / (1 + i)^n", "P = 20.000.000 / (1,10)^3 = 20.000.000 / 1,331", "P = 15.026.296,02"]}, {"id": "Q032", "nivel": 3, "tema": "Interés compuesto", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "Un capital de $8.000.000 se convierte en $10.000.000 en 18 meses con interés compuesto. ¿Cuál es la tasa mensual?", "opciones": ["1,2474%", "16,0397%", "1,3889%", "101,2474%"], "correcta": 0, "feedback": ["¡Correcto! Solución: i = (F/P)^(1/n) − 1 → i = (1,25)^(1/18) − 1 → i = 1,2474% mensual", "Usaste n = 1,5 (años); con tasa mensual n = 18.", "Ese es el cálculo con interés simple.", "Olvidaste restar 1 al final."], "explicacion": "Solución: i = (F/P)^(1/n) − 1 → i = (1,25)^(1/18) − 1 → i = 1,2474% mensual", "pasos": ["i = (F/P)^(1/n) − 1", "i = (1,25)^(1/18) − 1", "i = 1,2474% mensual"]}, {"id": "Q033", "nivel": 3, "tema": "Interés compuesto", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "¿En cuántos meses $4.000.000 al 1,5% mensual compuesto se convierten en $6.000.000?", "opciones": ["27,03 meses", "2,27 meses", "33,33 meses", "27,23 meses"], "correcta": 3, "feedback": ["El denominador es ln(1 + i), no i.", "Ese resultado está en años; la tasa es mensual.", "Usaste la fórmula de interés simple.", "¡Correcto! Solución: n = ln(F/P) / ln(1 + i) → n = ln(1,5) / ln(1,015) → n = 0,405465 / 0,014889 = 27,23 meses"], "explicacion": "Solución: n = ln(F/P) / ln(1 + i) → n = ln(1,5) / ln(1,015) → n = 0,405465 / 0,014889 = 27,23 meses", "pasos": ["n = ln(F/P) / ln(1 + i)", "n = ln(1,5) / ln(1,015)", "n = 0,405465 / 0,014889 = 27,23 meses"]}, {"id": "Q034", "nivel": 3, "tema": "Interés compuesto", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "¿Cuánto interés compuesto generan $10.000.000 al 2% mensual en 6 meses?", "opciones": ["$11.261.624,19", "$1.200.000,00", "$1.261.624,19", "$0,00"], "correcta": 2, "feedback": ["Ese es el monto F; el interés es F − P.", "Ese es el interés simple.", "¡Correcto! Solución: F = 10.000.000 × (1,02)^6 = 11.261.624,19 → I = F − P = 1.261.624,19", "No se eleva la tasa sola; se eleva (1 + i)."], "explicacion": "Solución: F = 10.000.000 × (1,02)^6 = 11.261.624,19 → I = F − P = 1.261.624,19", "pasos": ["F = 10.000.000 × (1,02)^6 = 11.261.624,19", "I = F − P = 1.261.624,19"]}, {"id": "Q035", "nivel": 3, "tema": "Interés compuesto", "tipo": "caso", "tiempo": 120, "puntos": 250, "enunciado": "Inviertes $12.000.000 durante 2 años al 12% anual. ¿Cuánto más ganas con interés compuesto que con simple?", "opciones": ["$3.052.800,00", "$0,00", "$172.800,00", "$2.880.000,00"], "correcta": 2, "feedback": ["Ese es el interés compuesto total, no la diferencia.", "Solo son iguales cuando n = 1; con 2 años el compuesto gana más.", "¡Correcto! Solución: Compuesto: F = 12.000.000 × 1,12² = 15.052.800 → Simple: F = 12.000.000 × (1 + 0,12 × 2) = 14.880.000 → Diferencia = 172.800", "Ese es el interés simple total (2 años); la pregunta pide la diferencia entre compuesto y simple."], "explicacion": "Solución: Compuesto: F = 12.000.000 × 1,12² = 15.052.800 → Simple: F = 12.000.000 × (1 + 0,12 × 2) = 14.880.000 → Diferencia = 172.800", "pasos": ["Compuesto: F = 12.000.000 × 1,12² = 15.052.800", "Simple: F = 12.000.000 × (1 + 0,12 × 2) = 14.880.000", "Diferencia = 172.800"]}, {"id": "Q036", "nivel": 3, "tema": "Interés compuesto", "tipo": "contrarreloj", "tiempo": 20, "puntos": 150, "enunciado": "¿En cuánto se convierte $1.000.000 al 10% anual compuesto en 2 años?", "opciones": ["$1.100.000", "$1.210.000", "$1.200.000", "$1.331.000"], "correcta": 1, "feedback": ["Ese es el valor tras un solo año.", "¡Correcto! Solución: F = 1.000.000 × (1,10)² = 1.210.000", "Ese es el resultado con interés simple.", "Eso corresponde a 3 años."], "explicacion": "Solución: F = 1.000.000 × (1,10)² = 1.210.000", "pasos": ["F = 1.000.000 × (1,10)² = 1.210.000"]}, {"id": "Q037", "nivel": 3, "tema": "Interés compuesto", "tipo": "caso", "tiempo": 120, "puntos": 250, "enunciado": "Abres un CDT de $15.000.000 al 9% EA por 3 años. ¿Cuánto recibes al vencimiento?", "opciones": ["$19.425.435,00", "$19.629.680,56", "$4.425.435,00", "$19.050.000,00"], "correcta": 0, "feedback": ["¡Correcto! Solución: F = 15.000.000 × (1,09)^3 → (1,09)^3 = 1,295029 → F = 19.425.435,00", "Trataste el 9% como nominal mensual; es efectivo anual.", "Ese es solo el interés ganado.", "Una tasa EA se capitaliza: usa interés compuesto."], "explicacion": "Solución: F = 15.000.000 × (1,09)^3 → (1,09)^3 = 1,295029 → F = 19.425.435,00", "pasos": ["F = 15.000.000 × (1,09)^3", "(1,09)^3 = 1,295029", "F = 19.425.435,00"]}, {"id": "Q038", "nivel": 4, "tema": "Conversión de tasas", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "Una tasa nominal es:", "opciones": ["La tasa que fija el gobierno por ley.", "Una tasa anual que se capitaliza varias veces al año y no refleja por sí sola el rendimiento real.", "Una tasa que no admite capitalización.", "La tasa que realmente se gana en un año."], "correcta": 1, "feedback": ["La nominal es un tipo de expresión de tasa, no una tasa legal.", "¡Correcto! La nominal j se divide entre m capitalizaciones para obtener la tasa periódica: i = j/m. Para conocer el rendimiento real se convierte a efectiva.", "Precisamente se define junto a una frecuencia de capitalización.", "Esa es la tasa efectiva anual (EA)."], "explicacion": "La nominal j se divide entre m capitalizaciones para obtener la tasa periódica: i = j/m. Para conocer el rendimiento real se convierte a efectiva.", "pasos": []}, {"id": "Q039", "nivel": 4, "tema": "Conversión de tasas", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "Una tasa efectiva es:", "opciones": ["Una tasa que solo se usa en interés simple.", "La nominal dividida entre 12 siempre.", "La tasa antes de capitalizar los intereses.", "La tasa que mide el rendimiento real del periodo, teniendo en cuenta la capitalización."], "correcta": 3, "feedback": ["Se usa precisamente en interés compuesto.", "Eso da una tasa periódica mensual solo si la nominal es MV.", "Es la que resulta DESPUÉS de considerar la capitalización.", "¡Correcto! La efectiva incorpora el efecto de 'interés sobre interés'. La más usada para comparar es la Efectiva Anual (EA)."], "explicacion": "La efectiva incorpora el efecto de 'interés sobre interés'. La más usada para comparar es la Efectiva Anual (EA).", "pasos": []}, {"id": "Q040", "nivel": 4, "tema": "Conversión de tasas", "tipo": "contrarreloj", "tiempo": 20, "puntos": 150, "enunciado": "La expresión '24% NMV' significa:", "opciones": ["24% efectivo mensual.", "2% anual.", "24% efectivo anual.", "24% anual nominal capitalizable mes vencido, es decir, 2% mensual."], "correcta": 3, "feedback": ["24% mensual sería una tasa altísima; la nominal anual se divide entre 12.", "El 2% es mensual, no anual.", "La EA de 24% NMV es mayor: (1,02)^12 − 1 = 26,82%.", "¡Correcto! NMV = nominal mes vencido. i = 24% / 12 = 2% mensual, liquidado al final de cada mes."], "explicacion": "NMV = nominal mes vencido. i = 24% / 12 = 2% mensual, liquidado al final de cada mes.", "pasos": []}, {"id": "Q041", "nivel": 4, "tema": "Conversión de tasas", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "La tasa periódica a partir de una nominal j con m capitalizaciones al año es:", "opciones": ["i = j − m", "i = (1 + j)^m − 1", "i = j / m", "i = j · m"], "correcta": 2, "feedback": ["No tiene sentido restar el número de capitalizaciones.", "Esa estructura se usa para pasar de periódica a efectiva.", "¡Correcto! Ejemplo: 12% NTV → i = 12% / 4 = 3% trimestral.", "Se divide, no se multiplica."], "explicacion": "Ejemplo: 12% NTV → i = 12% / 4 = 3% trimestral.", "pasos": []}, {"id": "Q042", "nivel": 4, "tema": "Conversión de tasas", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "Para una misma tasa nominal, si aumenta la frecuencia de capitalización, la tasa efectiva anual:", "opciones": ["Aumenta.", "Disminuye.", "Se vuelve igual a la nominal.", "Permanece igual."], "correcta": 0, "feedback": ["¡Correcto! Más capitalizaciones = más 'interés sobre interés'. 12% NMV da 12,68% EA, mientras 12% NSV da 12,36% EA.", "Ocurre lo contrario.", "La EA solo iguala a la nominal cuando m = 1.", "Solo sería igual si no hubiera capitalización intermedia."], "explicacion": "Más capitalizaciones = más 'interés sobre interés'. 12% NMV da 12,68% EA, mientras 12% NSV da 12,36% EA.", "pasos": []}, {"id": "Q043", "nivel": 4, "tema": "Conversión de tasas", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "Una tasa anticipada se diferencia de una vencida en que:", "opciones": ["Siempre es mayor que la tasa vencida equivalente.", "Solo existe en interés simple.", "El interés se cobra al inicio del periodo; se convierte con iv = ia / (1 − ia).", "El interés se cobra al final del periodo."], "correcta": 2, "feedback": ["Es al revés: la vencida equivalente es mayor que la anticipada.", "Las tasas anticipadas se usan también en interés compuesto.", "¡Correcto! En una tasa anticipada el interés se descuenta al comienzo, por eso equivale a una vencida mayor: iv = ia/(1 − ia).", "Esa es la definición de tasa vencida."], "explicacion": "En una tasa anticipada el interés se descuenta al comienzo, por eso equivale a una vencida mayor: iv = ia/(1 − ia).", "pasos": []}, {"id": "Q044", "nivel": 4, "tema": "Conversión de tasas", "tipo": "contrarreloj", "tiempo": 20, "puntos": 150, "enunciado": "¿Cuál es la tasa mensual de un 18% NMV?", "opciones": ["18,0000%", "1,5000%", "1,3888%", "4,5000%"], "correcta": 1, "feedback": ["18% es anual nominal; se divide entre 12.", "¡Correcto! Solución: i = j / m = 18% / 12 = 1,5% mensual", "Así se convierte una EA, pero 18% es nominal mes vencido.", "Dividiste entre 4 (trimestral); MV indica 12 periodos."], "explicacion": "Solución: i = j / m = 18% / 12 = 1,5% mensual", "pasos": ["i = j / m = 18% / 12 = 1,5% mensual"]}, {"id": "Q045", "nivel": 4, "tema": "Conversión de tasas", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "¿Cuál es la tasa efectiva anual equivalente a 24% NMV?", "opciones": ["1.221,4789%", "26,8242%", "2,0000%", "24,0000%"], "correcta": 1, "feedback": ["Elevaste 1,24; primero hay que pasar a tasa mensual (2%).", "¡Correcto! Solución: i mensual = 24% / 12 = 2% → EA = (1 + 0,02)^12 − 1 → EA = 26,8242%", "2% es la tasa mensual; falta llevarla a efectiva anual con (1,02)^12 − 1.", "La EA es mayor que la nominal por la capitalización mensual."], "explicacion": "Solución: i mensual = 24% / 12 = 2% → EA = (1 + 0,02)^12 − 1 → EA = 26,8242%", "pasos": ["i mensual = 24% / 12 = 2%", "EA = (1 + 0,02)^12 − 1", "EA = 26,8242%"]}, {"id": "Q046", "nivel": 4, "tema": "Conversión de tasas", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "¿Cuál es la tasa efectiva anual equivalente a 12% NTV?", "opciones": ["42,5761%", "12,0000%", "12,5509%", "12,6825%"], "correcta": 2, "feedback": ["Elevaste a 12; en un año hay 4 trimestres.", "La EA siempre supera a la nominal si hay más de una capitalización.", "¡Correcto! Solución: i trimestral = 12% / 4 = 3% → EA = (1,03)^4 − 1 → EA = 12,5509%", "Dividiste entre 12; TV significa 4 trimestres."], "explicacion": "Solución: i trimestral = 12% / 4 = 3% → EA = (1,03)^4 − 1 → EA = 12,5509%", "pasos": ["i trimestral = 12% / 4 = 3%", "EA = (1,03)^4 − 1", "EA = 12,5509%"]}, {"id": "Q047", "nivel": 4, "tema": "Conversión de tasas", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "¿Cuál es la tasa mensual equivalente a 20% EA?", "opciones": ["791,6100%", "101,5309%", "1,5309%", "1,6667%"], "correcta": 2, "feedback": ["Elevaste a 12; para pasar de anual a mensual se eleva a 1/12.", "Olvidaste restar 1.", "¡Correcto! Solución: i = (1 + EA)^(1/12) − 1 → i = (1,20)^(1/12) − 1 → i = 1,5309% mensual", "Dividir entre 12 solo aplica a nominales; una EA se convierte con raíz 12."], "explicacion": "Solución: i = (1 + EA)^(1/12) − 1 → i = (1,20)^(1/12) − 1 → i = 1,5309% mensual", "pasos": ["i = (1 + EA)^(1/12) − 1", "i = (1,20)^(1/12) − 1", "i = 1,5309% mensual"]}, {"id": "Q048", "nivel": 4, "tema": "Conversión de tasas", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "¿Cuál es la tasa nominal semestre vencido (NSV) equivalente a 15% EA?", "opciones": ["7,2381%", "14,4761%", "15,0000%", "7,5000%"], "correcta": 1, "feedback": ["Esa es la tasa semestral efectiva; falta multiplicar por 2.", "¡Correcto! Solución: i semestral = (1,15)^(1/2) − 1 = 7,2381% → Nominal = i semestral × 2 → j = 14,4761% NSV", "La nominal es menor que la EA cuando hay varias capitalizaciones.", "Dividiste 15%/2; una EA se convierte con raíz cuadrada."], "explicacion": "Solución: i semestral = (1,15)^(1/2) − 1 = 7,2381% → Nominal = i semestral × 2 → j = 14,4761% NSV", "pasos": ["i semestral = (1,15)^(1/2) − 1 = 7,2381%", "Nominal = i semestral × 2", "j = 14,4761% NSV"]}, {"id": "Q049", "nivel": 4, "tema": "Conversión de tasas", "tipo": "caso", "tiempo": 120, "puntos": 250, "enunciado": "Para invertir, el Banco A ofrece 22% NMV y el Banco B 23% EA. ¿Cuál conviene?", "opciones": ["Son iguales", "Banco A, porque su EA es 24,36% > 23%", "Banco B, porque A rinde solo 22% EA", "Banco B, porque 23% es mayor que 22%"], "correcta": 1, "feedback": ["Al convertir, A rinde 24,36% EA, más que B.", "¡Correcto! Solución: Convertir A: i mensual = 22%/12 = 1,8333% → EA de A = (1,018333)^12 − 1 = 24,36% → Comparar: 24,36% > 23% → conviene el Banco A", "22% es nominal; capitalizado mensualmente rinde más.", "Comparaste una nominal con una efectiva; hay que pasarlas a la misma base."], "explicacion": "Solución: Convertir A: i mensual = 22%/12 = 1,8333% → EA de A = (1,018333)^12 − 1 = 24,36% → Comparar: 24,36% > 23% → conviene el Banco A", "pasos": ["Convertir A: i mensual = 22%/12 = 1,8333%", "EA de A = (1,018333)^12 − 1 = 24,36%", "Comparar: 24,36% > 23% → conviene el Banco A"]}, {"id": "Q050", "nivel": 4, "tema": "Conversión de tasas", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "Un crédito cobra 3% mensual anticipado. ¿Cuál es la tasa mensual vencida equivalente?", "opciones": ["3,0000%", "36,0000%", "2,9126%", "3,0928%"], "correcta": 3, "feedback": ["Una tasa anticipada equivale a una vencida MAYOR.", "Eso anualiza la tasa, no la convierte a vencida.", "Esa fórmula convierte de vencida a anticipada; aquí es al revés.", "¡Correcto! Solución: iv = ia / (1 − ia) → iv = 0,03 / 0,97 → iv = 3,0928% mensual"], "explicacion": "Solución: iv = ia / (1 − ia) → iv = 0,03 / 0,97 → iv = 3,0928% mensual", "pasos": ["iv = ia / (1 − ia)", "iv = 0,03 / 0,97", "iv = 3,0928% mensual"]}, {"id": "Q051", "nivel": 5, "tema": "Valor presente y valor futuro", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "El valor presente (VP) de un flujo futuro es:", "opciones": ["El valor del flujo después de impuestos.", "El valor del flujo multiplicado por (1 + i)^n.", "La suma de todos los pagos sin considerar la tasa.", "Su valor hoy, obtenido al descontarlo con una tasa de interés."], "correcta": 3, "feedback": ["El VP no se refiere a impuestos sino al momento en el tiempo.", "Multiplicar lleva el valor al futuro, no al presente.", "Sumar pagos de fechas distintas ignora el valor del dinero en el tiempo.", "¡Correcto! P = F / (1 + i)^n. Permite comparar dinero de distintas fechas en el momento cero."], "explicacion": "P = F / (1 + i)^n. Permite comparar dinero de distintas fechas en el momento cero.", "pasos": []}, {"id": "Q052", "nivel": 5, "tema": "Valor presente y valor futuro", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "'Descontar' o 'actualizar' un valor futuro significa:", "opciones": ["Restarle la tasa de interés.", "Multiplicarlo por (1 + i)^n.", "Aplicarle un descuento comercial del 10%.", "Dividirlo entre (1 + i)^n para llevarlo al presente."], "correcta": 3, "feedback": ["No se resta la tasa; se divide entre el factor (1 + i)^n.", "Eso es capitalizar, llevar al futuro.", "El término no se refiere a promociones comerciales.", "¡Correcto! Descontar es la operación inversa de capitalizar: P = F(1 + i)^−n."], "explicacion": "Descontar es la operación inversa de capitalizar: P = F(1 + i)^−n.", "pasos": []}, {"id": "Q053", "nivel": 5, "tema": "Valor presente y valor futuro", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "Si la tasa de descuento aumenta, el valor presente de un flujo futuro:", "opciones": ["Disminuye.", "Aumenta.", "Se vuelve negativo.", "No cambia."], "correcta": 0, "feedback": ["¡Correcto! En P = F/(1 + i)^n, un i mayor agranda el denominador y reduce P.", "Ocurre lo contrario: tasa y VP tienen relación inversa.", "Con F positivo, P sigue siendo positivo, solo más pequeño.", "La tasa está en la fórmula, así que sí cambia."], "explicacion": "En P = F/(1 + i)^n, un i mayor agranda el denominador y reduce P.", "pasos": []}, {"id": "Q054", "nivel": 5, "tema": "Valor presente y valor futuro", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "El valor futuro de una inversión única crece cuando:", "opciones": ["Se reduce el plazo.", "Aumentan la tasa de interés o el número de periodos.", "Disminuye la tasa de interés.", "Se retiran los intereses cada periodo."], "correcta": 1, "feedback": ["Menos periodos = menos capitalización.", "¡Correcto! F = P(1 + i)^n crece con i y con n.", "Una tasa menor reduce F.", "Retirarlos impide la capitalización y reduce F."], "explicacion": "F = P(1 + i)^n crece con i y con n.", "pasos": []}, {"id": "Q055", "nivel": 5, "tema": "Valor presente y valor futuro", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "Para comparar alternativas con flujos en fechas distintas se debe:", "opciones": ["Escoger la alternativa con el pago más grande.", "Llevar todos los flujos a una misma fecha focal con la tasa de interés.", "Sumar los valores nominales de cada alternativa.", "Comparar solo el primer pago de cada alternativa."], "correcta": 1, "feedback": ["El mayor pago puede estar muy lejos en el tiempo y valer menos hoy.", "¡Correcto! La fecha focal puede ser cualquiera (hoy, el final, etc.); lo importante es que todos los flujos estén en la misma fecha.", "Ignora el valor del dinero en el tiempo.", "Se deben considerar todos los flujos."], "explicacion": "La fecha focal puede ser cualquiera (hoy, el final, etc.); lo importante es que todos los flujos estén en la misma fecha.", "pasos": []}, {"id": "Q056", "nivel": 5, "tema": "Valor presente y valor futuro", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "Ahorras $7.000.000 a una tasa del 14% NMV durante 2 años. ¿Cuál es el valor futuro?", "opciones": ["$7.164.286,11", "$9.246.909,70", "$8.960.000,00", "$9.097.200,00"], "correcta": 1, "feedback": ["Con tasa mensual, n debe ser 24 meses, no 2.", "¡Correcto! Solución: i = 14%/12 = 1,1667% mensual; n = 24 meses → F = 7.000.000 × (1,011667)^24 → F = 9.246.909,70", "Usaste interés simple.", "Trataste 14% como efectiva anual; es nominal mes vencido."], "explicacion": "Solución: i = 14%/12 = 1,1667% mensual; n = 24 meses → F = 7.000.000 × (1,011667)^24 → F = 9.246.909,70", "pasos": ["i = 14%/12 = 1,1667% mensual; n = 24 meses", "F = 7.000.000 × (1,011667)^24", "F = 9.246.909,70"]}, {"id": "Q057", "nivel": 5, "tema": "Valor presente y valor futuro", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "¿Cuál es el valor presente de $25.000.000 que se recibirán en 5 años, al 11% EA?", "opciones": ["$14.836.283,20", "$42.126.453,88", "$16.129.032,26", "$22.522.522,52"], "correcta": 0, "feedback": ["¡Correcto! Solución: P = F / (1 + i)^n → P = 25.000.000 / (1,11)^5 → P = 14.836.283,20", "Multiplicaste: eso es un valor futuro.", "Usaste interés simple.", "Descontaste un solo periodo; son 5 años."], "explicacion": "Solución: P = F / (1 + i)^n → P = 25.000.000 / (1,11)^5 → P = 14.836.283,20", "pasos": ["P = F / (1 + i)^n", "P = 25.000.000 / (1,11)^5", "P = 14.836.283,20"]}, {"id": "Q058", "nivel": 5, "tema": "Valor presente y valor futuro", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "Recibirás $3.000.000 en el mes 6 y $5.000.000 en el mes 12. Con 1,5% mensual, ¿cuál es su valor presente total?", "opciones": ["$8.000.000,00", "$6.925.563,69", "$6.691.099,38", "$7.316.337,54"], "correcta": 1, "feedback": ["Sumaste valores nominales sin descontarlos.", "¡Correcto! Solución: VP1 = 3.000.000 / (1,015)^6 = 2.743.626,58 → VP2 = 5.000.000 / (1,015)^12 = 4.181.937,11 → VP = 6.925.563,69", "Descontaste todo al mes 12; el primer pago está en el mes 6.", "Descontaste todo al mes 6; el segundo pago está en el mes 12."], "explicacion": "Solución: VP1 = 3.000.000 / (1,015)^6 = 2.743.626,58 → VP2 = 5.000.000 / (1,015)^12 = 4.181.937,11 → VP = 6.925.563,69", "pasos": ["VP1 = 3.000.000 / (1,015)^6 = 2.743.626,58", "VP2 = 5.000.000 / (1,015)^12 = 4.181.937,11", "VP = 6.925.563,69"]}, {"id": "Q059", "nivel": 5, "tema": "Valor presente y valor futuro", "tipo": "caso", "tiempo": 120, "puntos": 250, "enunciado": "Debes $4.000.000 hoy y $6.000.000 en el mes 8. Quieres reemplazarlos por un solo pago en el mes 12 con 2% mensual. ¿De cuánto es?", "opciones": ["$12.102.923,46", "$10.000.000,00", "$12.682.417,95", "$11.567.560,14"], "correcta": 3, "feedback": ["La deuda del mes 8 se lleva al mes 12: son 4 meses.", "Sumaste sin llevar los valores al mes 12.", "La deuda del mes 8 solo se capitaliza 4 meses, no 12.", "¡Correcto! Solución: Fecha focal: mes 12 → 4.000.000 × (1,02)^12 = 5.072.967,18 → 6.000.000 × (1,02)^4 = 6.494.592,96 → Pago = 11.567.560,14"], "explicacion": "Solución: Fecha focal: mes 12 → 4.000.000 × (1,02)^12 = 5.072.967,18 → 6.000.000 × (1,02)^4 = 6.494.592,96 → Pago = 11.567.560,14", "pasos": ["Fecha focal: mes 12", "4.000.000 × (1,02)^12 = 5.072.967,18", "6.000.000 × (1,02)^4 = 6.494.592,96", "Pago = 11.567.560,14"]}, {"id": "Q060", "nivel": 5, "tema": "Valor presente y valor futuro", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "Inviertes $9.000.000 al 13% NTV durante 3 años. ¿Cuánto tendrás?", "opciones": ["$12.986.073,00", "$9.906.327,70", "$12.510.000,00", "$13.210.621,00"], "correcta": 3, "feedback": ["13% es nominal trimestral, no efectiva anual.", "Con tasa trimestral, n son 12 trimestres.", "Usaste interés simple.", "¡Correcto! Solución: i = 13%/4 = 3,25% trimestral; n = 12 trimestres → F = 9.000.000 × (1,0325)^12 → F = 13.210.621,00"], "explicacion": "Solución: i = 13%/4 = 3,25% trimestral; n = 12 trimestres → F = 9.000.000 × (1,0325)^12 → F = 13.210.621,00", "pasos": ["i = 13%/4 = 3,25% trimestral; n = 12 trimestres", "F = 9.000.000 × (1,0325)^12", "F = 13.210.621,00"]}, {"id": "Q061", "nivel": 5, "tema": "Valor presente y valor futuro", "tipo": "contrarreloj", "tiempo": 20, "puntos": 150, "enunciado": "¿Cuál es el valor presente de $1.100.000 que se reciben en un año, al 10% anual?", "opciones": ["$1.210.000", "$1.100.000", "$990.000", "$1.000.000"], "correcta": 3, "feedback": ["Multiplicaste; para el VP se divide.", "Ese es el valor futuro.", "Restaste el 10% del valor futuro; se debe dividir entre 1,10.", "¡Correcto! Solución: P = 1.100.000 / 1,10 = 1.000.000"], "explicacion": "Solución: P = 1.100.000 / 1,10 = 1.000.000", "pasos": ["P = 1.100.000 / 1,10 = 1.000.000"]}, {"id": "Q062", "nivel": 5, "tema": "Valor presente y valor futuro", "tipo": "caso", "tiempo": 120, "puntos": 250, "enunciado": "Vendes tu carro: A ofrece $30.000.000 de contado; B ofrece $33.500.000 en 10 meses. Tu tasa es 1% mensual. ¿Qué eliges?", "opciones": ["A, porque el contado siempre es mejor", "B, porque su VP es $30.327.112,98", "A, porque el VP de B es $30.454.545,45", "Son equivalentes"], "correcta": 1, "feedback": ["No siempre: hay que comparar en la misma fecha con la tasa.", "¡Correcto! Solución: VP de B = 33.500.000 / (1,01)^10 → VP de B = 30.327.112,98 → Como es mayor que 30.000.000, conviene B", "Usaste interés simple (1,10); se debe usar (1,01)^10.", "El VP de B es $30.327.112,98, distinto de 30.000.000."], "explicacion": "Solución: VP de B = 33.500.000 / (1,01)^10 → VP de B = 30.327.112,98 → Como es mayor que 30.000.000, conviene B", "pasos": ["VP de B = 33.500.000 / (1,01)^10", "VP de B = 30.327.112,98", "Como es mayor que 30.000.000, conviene B"]}, {"id": "Q063", "nivel": 6, "tema": "Anualidades vencidas", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "Una anualidad es una serie de pagos que cumple:", "opciones": ["Pagos que se hacen únicamente una vez al año.", "Pagos iguales, en intervalos de tiempo iguales y con la misma tasa por periodo.", "Pagos crecientes cada periodo.", "Un único pago al final del plazo."], "correcta": 1, "feedback": ["El nombre engaña: los pagos pueden ser mensuales, trimestrales, etc.", "¡Correcto! Las tres condiciones permiten usar las fórmulas de series uniformes en lugar de descontar pago por pago.", "Esas son series gradientes, no anualidades.", "Un solo pago es un valor futuro, no una serie."], "explicacion": "Las tres condiciones permiten usar las fórmulas de series uniformes en lugar de descontar pago por pago.", "pasos": []}, {"id": "Q064", "nivel": 6, "tema": "Anualidades vencidas", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "En una anualidad vencida los pagos se realizan:", "opciones": ["En fechas aleatorias.", "Al final de cada periodo.", "Solo al final del plazo total.", "Al inicio de cada periodo."], "correcta": 1, "feedback": ["Una anualidad requiere intervalos iguales.", "¡Correcto! Es el caso típico de las cuotas de un crédito: se paga al terminar cada mes.", "Eso sería un pago único.", "Esa es la anualidad anticipada."], "explicacion": "Es el caso típico de las cuotas de un crédito: se paga al terminar cada mes.", "pasos": []}, {"id": "Q065", "nivel": 6, "tema": "Anualidades vencidas", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "¿Cuál es la fórmula del valor presente de una anualidad vencida?", "opciones": ["P = A · [1 − (1 + i)^−n] / i · (1 + i)", "P = A · n", "P = A · [1 − (1 + i)^−n] / i", "P = A · [(1 + i)^n − 1] / i"], "correcta": 2, "feedback": ["Esa es la versión para anualidades anticipadas.", "Ignora el valor del dinero en el tiempo.", "¡Correcto! Es la suma de n pagos A descontados uno a uno; la fórmula los resume en un solo factor.", "Esa es la fórmula del valor futuro de la anualidad."], "explicacion": "Es la suma de n pagos A descontados uno a uno; la fórmula los resume en un solo factor.", "pasos": []}, {"id": "Q066", "nivel": 6, "tema": "Anualidades vencidas", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "El valor futuro de una anualidad vencida queda ubicado:", "opciones": ["En la fecha del último pago.", "En el momento cero.", "Un periodo después del último pago.", "En la mitad del plazo."], "correcta": 0, "feedback": ["¡Correcto! F = A[(1 + i)^n − 1]/i acumula todos los pagos justo en el momento del pago n.", "En el momento cero está el valor presente.", "Así queda el VF de una anualidad anticipada.", "Las fórmulas no ubican valores a mitad del plazo."], "explicacion": "F = A[(1 + i)^n − 1]/i acumula todos los pagos justo en el momento del pago n.", "pasos": []}, {"id": "Q067", "nivel": 6, "tema": "Anualidades vencidas", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "Si se conoce el valor del crédito P, la tasa i y el número de cuotas n, la cuota vencida se calcula con:", "opciones": ["A = P · (1 + i)^n", "A = P / n", "A = P · i / [1 − (1 + i)^−n]", "A = P · i"], "correcta": 2, "feedback": ["Eso da el valor futuro de P, no la cuota.", "Dividir el crédito en partes iguales ignora los intereses.", "¡Correcto! Se despeja A de la fórmula del valor presente de la anualidad vencida.", "Eso es solo el interés del primer periodo."], "explicacion": "Se despeja A de la fórmula del valor presente de la anualidad vencida.", "pasos": []}, {"id": "Q068", "nivel": 6, "tema": "Anualidades vencidas", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "¿Cuál es el valor presente de 8 pagos anuales vencidos de $2.000.000 al 11% anual?", "opciones": ["$11.424.392,53", "$16.000.000,00", "$10.292.245,52", "$23.718.868,54"], "correcta": 2, "feedback": ["Esa es la fórmula para anualidad anticipada.", "Sumaste los pagos sin descontarlos.", "¡Correcto! Solución: P = A · [1 − (1 + i)^−n] / i → [1 − (1,11)^−8] / 0,11 = 5,146123 → P = 2.000.000 × 5,146123 = 10.292.245,52", "Ese es el valor futuro de la serie."], "explicacion": "Solución: P = A · [1 − (1 + i)^−n] / i → [1 − (1,11)^−8] / 0,11 = 5,146123 → P = 2.000.000 × 5,146123 = 10.292.245,52", "pasos": ["P = A · [1 − (1 + i)^−n] / i", "[1 − (1,11)^−8] / 0,11 = 5,146123", "P = 2.000.000 × 5,146123 = 10.292.245,52"]}, {"id": "Q069", "nivel": 6, "tema": "Anualidades vencidas", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "Pagas 18 cuotas mensuales vencidas de $350.000 al 14% NMV. ¿Cuál es el valor presente?", "opciones": ["$5.652.895,36", "$6.300.000,00", "$6.965.381,03", "$2.263.597,16"], "correcta": 0, "feedback": ["¡Correcto! Solución: i = 14%/12 = 1,1667% → factor = [1 − (1,011667)^−18]/0,011667 = 16,151130 → P = 5.652.895,36", "Sumaste las cuotas sin descontar.", "Ese es el valor futuro.", "Usaste 14% como tasa mensual; se divide entre 12."], "explicacion": "Solución: i = 14%/12 = 1,1667% → factor = [1 − (1,011667)^−18]/0,011667 = 16,151130 → P = 5.652.895,36", "pasos": ["i = 14%/12 = 1,1667%", "factor = [1 − (1,011667)^−18]/0,011667 = 16,151130", "P = 5.652.895,36"]}, {"id": "Q070", "nivel": 6, "tema": "Anualidades vencidas", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "Ahorras $1.200.000 trimestrales vencidos durante 3 años al 13% NTV. ¿Cuánto acumulas?", "opciones": ["$17.274.342,58", "$3.718.267,50", "$14.400.000,00", "$11.768.491,67"], "correcta": 0, "feedback": ["¡Correcto! Solución: i = 13%/4 = 3,25%; n = 12 trimestres → F = 1.200.000 × [(1,0325)^12 − 1]/0,0325 → F = 17.274.342,58", "Con tasa trimestral, n son 12 trimestres.", "Sumaste los depósitos sin intereses.", "Ese es el valor presente; se pide el acumulado."], "explicacion": "Solución: i = 13%/4 = 3,25%; n = 12 trimestres → F = 1.200.000 × [(1,0325)^12 − 1]/0,0325 → F = 17.274.342,58", "pasos": ["i = 13%/4 = 3,25%; n = 12 trimestres", "F = 1.200.000 × [(1,0325)^12 − 1]/0,0325", "F = 17.274.342,58"]}, {"id": "Q071", "nivel": 6, "tema": "Anualidades vencidas", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "Depositas $500.000 al final de cada mes durante 36 meses al 1% mensual. ¿Cuál es el valor futuro?", "opciones": ["$21.753.823,57", "$18.000.000,00", "$21.538.439,18", "$715.384,39"], "correcta": 2, "feedback": ["Esa es la fórmula anticipada; los depósitos son al final del mes.", "Sumaste los depósitos sin intereses.", "¡Correcto! Solución: F = A · [(1 + i)^n − 1] / i → [(1,01)^36 − 1]/0,01 = 43,076878 → F = 21.538.439,18", "Capitalizaste un solo depósito; son 36."], "explicacion": "Solución: F = A · [(1 + i)^n − 1] / i → [(1,01)^36 − 1]/0,01 = 43,076878 → F = 21.538.439,18", "pasos": ["F = A · [(1 + i)^n − 1] / i", "[(1,01)^36 − 1]/0,01 = 43,076878", "F = 21.538.439,18"]}, {"id": "Q072", "nivel": 6, "tema": "Anualidades vencidas", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "Un crédito de $15.000.000 se paga en 36 cuotas mensuales vencidas al 1,5% mensual. ¿Cuál es la cuota?", "opciones": ["$534.271,86", "$542.285,93", "$416.666,67", "$641.666,67"], "correcta": 1, "feedback": ["Esa es la cuota anticipada.", "¡Correcto! Solución: A = P · i / [1 − (1 + i)^−n] → A = 15.000.000 × 0,015 / [1 − (1,015)^−36] → A = 542.285,93", "Dividiste el crédito sin incluir intereses.", "Usaste interés simple."], "explicacion": "Solución: A = P · i / [1 − (1 + i)^−n] → A = 15.000.000 × 0,015 / [1 − (1,015)^−36] → A = 542.285,93", "pasos": ["A = P · i / [1 − (1 + i)^−n]", "A = 15.000.000 × 0,015 / [1 − (1,015)^−36]", "A = 542.285,93"]}, {"id": "Q073", "nivel": 6, "tema": "Anualidades vencidas", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "Quieres reunir $20.000.000 en 24 meses con depósitos mensuales vencidos al 1%. ¿Cuánto debes depositar?", "opciones": ["$833.333,33", "$734.128,16", "$741.469,44", "$941.469,44"], "correcta": 2, "feedback": ["Dividiste sin considerar los intereses que generan los ahorros.", "Esa es la cuota anticipada.", "¡Correcto! Solución: A = F · i / [(1 + i)^n − 1] → A = 20.000.000 × 0,01 / [(1,01)^24 − 1] → A = 741.469,44", "Usaste la fórmula de cuota de un crédito (VP), pero la meta es un valor futuro."], "explicacion": "Solución: A = F · i / [(1 + i)^n − 1] → A = 20.000.000 × 0,01 / [(1,01)^24 − 1] → A = 741.469,44", "pasos": ["A = F · i / [(1 + i)^n − 1]", "A = 20.000.000 × 0,01 / [(1,01)^24 − 1]", "A = 741.469,44"]}, {"id": "Q074", "nivel": 6, "tema": "Anualidades vencidas", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "Un crédito de $12.000.000 se paga con cuotas mensuales vencidas de $800.000 al 1,2% mensual. ¿Cuántas cuotas son?", "opciones": ["1,39 meses", "13,88 meses", "16,64 meses", "15,00 meses"], "correcta": 2, "feedback": ["Ese resultado está en años.", "Usaste la fórmula de n para valor futuro; aquí se conoce el valor presente.", "¡Correcto! Solución: n = ln[A/(A − P·i)] / ln(1 + i) → P·i = 144.000; A − P·i = 656.000 → n = ln(1,219512)/ln(1,012) = 16,64 meses", "Dividiste el crédito entre la cuota sin considerar intereses."], "explicacion": "Solución: n = ln[A/(A − P·i)] / ln(1 + i) → P·i = 144.000; A − P·i = 656.000 → n = ln(1,219512)/ln(1,012) = 16,64 meses", "pasos": ["n = ln[A/(A − P·i)] / ln(1 + i)", "P·i = 144.000; A − P·i = 656.000", "n = ln(1,219512)/ln(1,012) = 16,64 meses"]}, {"id": "Q075", "nivel": 6, "tema": "Anualidades vencidas", "tipo": "caso", "tiempo": 120, "puntos": 250, "enunciado": "Una moto cuesta $9.000.000. Pagas 20% de cuota inicial y el resto en 24 cuotas mensuales vencidas al 1,8%. ¿Cuál es la cuota?", "opciones": ["$372.102,01", "$465.127,52", "$300.000,00", "$93.025,50"], "correcta": 0, "feedback": ["¡Correcto! Solución: Saldo a financiar = 9.000.000 × 0,8 = 7.200.000 → A = 7.200.000 × 0,018 / [1 − (1,018)^−24] → A = 372.102,01", "Olvidaste descontar la cuota inicial.", "Dividiste sin intereses.", "Financiaste el 20%; se financia el 80% restante."], "explicacion": "Solución: Saldo a financiar = 9.000.000 × 0,8 = 7.200.000 → A = 7.200.000 × 0,018 / [1 − (1,018)^−24] → A = 372.102,01", "pasos": ["Saldo a financiar = 9.000.000 × 0,8 = 7.200.000", "A = 7.200.000 × 0,018 / [1 − (1,018)^−24]", "A = 372.102,01"]}, {"id": "Q076", "nivel": 7, "tema": "Anualidades anticipadas", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "En una anualidad anticipada los pagos se realizan:", "opciones": ["Al final de cada periodo.", "Al inicio de cada periodo.", "Solo al final del plazo.", "Dos veces por periodo."], "correcta": 1, "feedback": ["Esa es la anualidad vencida.", "¡Correcto! Ejemplos típicos: el arriendo, la matrícula o una suscripción que se paga por adelantado.", "Eso sería un pago único futuro.", "La anualidad tiene un pago por periodo."], "explicacion": "Ejemplos típicos: el arriendo, la matrícula o una suscripción que se paga por adelantado.", "pasos": []}, {"id": "Q077", "nivel": 7, "tema": "Anualidades anticipadas", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "¿Qué relación existe entre el valor presente de una anualidad anticipada y una vencida con iguales A, i y n?", "opciones": ["Son exactamente iguales.", "VP anticipada = VP vencida + i.", "VP anticipada = VP vencida ÷ (1 + i).", "VP anticipada = VP vencida × (1 + i)."], "correcta": 3, "feedback": ["Difieren en el factor (1 + i).", "El ajuste es multiplicativo, no aditivo.", "Es al revés: los pagos anticipados están más cerca de hoy y valen más.", "¡Correcto! Cada pago anticipado ocurre un periodo antes, por eso vale (1 + i) veces más."], "explicacion": "Cada pago anticipado ocurre un periodo antes, por eso vale (1 + i) veces más.", "pasos": []}, {"id": "Q078", "nivel": 7, "tema": "Anualidades anticipadas", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "¿Cuál de estas situaciones es un ejemplo típico de anualidad anticipada?", "opciones": ["La cuota de un crédito de vehículo que se paga al final de cada mes.", "El arriendo que se paga al comienzo de cada mes.", "Una pensión que se recibe al final de cada mes trabajado.", "Un CDT que paga todo al vencimiento."], "correcta": 1, "feedback": ["Es una anualidad vencida.", "¡Correcto! El arrendatario paga por adelantado el mes que va a usar.", "Pagos al final del periodo son vencidos.", "Es un pago único, no una serie."], "explicacion": "El arrendatario paga por adelantado el mes que va a usar.", "pasos": []}, {"id": "Q079", "nivel": 7, "tema": "Anualidades anticipadas", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "Con el mismo valor financiado, tasa y número de pagos, la cuota anticipada comparada con la vencida es:", "opciones": ["El doble.", "Mayor.", "Igual.", "Menor."], "correcta": 3, "feedback": ["No hay relación de doble; la diferencia es el factor (1 + i).", "Al pagar antes se reduce el saldo antes, por lo que la cuota es menor.", "Difieren en el factor (1 + i).", "¡Correcto! A_ant = A_venc / (1 + i). Como se paga antes, se generan menos intereses."], "explicacion": "A_ant = A_venc / (1 + i). Como se paga antes, se generan menos intereses.", "pasos": []}, {"id": "Q080", "nivel": 7, "tema": "Anualidades anticipadas", "tipo": "teorica", "tiempo": 30, "puntos": 100, "enunciado": "El valor futuro de una anualidad anticipada queda ubicado:", "opciones": ["Un periodo después del último pago.", "Un periodo antes del primer pago.", "En el momento cero.", "En la fecha del último pago."], "correcta": 0, "feedback": ["¡Correcto! F_ant = A[(1 + i)^n − 1]/i · (1 + i): el factor (1 + i) lo traslada un periodo adelante del último pago.", "Eso no corresponde a ninguna fórmula estándar.", "Ahí se ubica el valor presente.", "Así queda el VF de una anualidad vencida."], "explicacion": "F_ant = A[(1 + i)^n − 1]/i · (1 + i): el factor (1 + i) lo traslada un periodo adelante del último pago.", "pasos": []}, {"id": "Q081", "nivel": 7, "tema": "Anualidades anticipadas", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "Un arriendo de $1.800.000 se paga al inicio de cada mes durante 12 meses. Con 1% mensual, ¿cuál es su valor presente?", "opciones": ["$20.259.139,45", "$20.461.730,85", "$20.058.553,91", "$21.600.000,00"], "correcta": 1, "feedback": ["Esa es la fórmula vencida; el arriendo se paga al inicio.", "¡Correcto! Solución: P = A · [1 − (1 + i)^−n]/i · (1 + i) → factor vencido = 11,255077 → P = 1.800.000 × 11,255077 × 1,01 = 20.461.730,85", "Dividiste entre (1 + i); en anticipadas se multiplica.", "Sumaste sin descontar."], "explicacion": "Solución: P = A · [1 − (1 + i)^−n]/i · (1 + i) → factor vencido = 11,255077 → P = 1.800.000 × 11,255077 × 1,01 = 20.461.730,85", "pasos": ["P = A · [1 − (1 + i)^−n]/i · (1 + i)", "factor vencido = 11,255077", "P = 1.800.000 × 11,255077 × 1,01 = 20.461.730,85"]}, {"id": "Q082", "nivel": 7, "tema": "Anualidades anticipadas", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "Ahorras $400.000 al inicio de cada mes durante 24 meses al 14% NMV. ¿Cuánto tendrás al final?", "opciones": ["$9.600.000,00", "$72.348.330,89", "$11.005.272,00", "$11.133.666,84"], "correcta": 3, "feedback": ["Sumaste sin intereses.", "14% es nominal anual; la tasa mensual es 1,1667%.", "Esa es la fórmula vencida; los depósitos son al inicio.", "¡Correcto! Solución: i = 1,1667% mensual → F = 400.000 × [(1,011667)^24 − 1]/0,011667 × 1,011667 → F = 11.133.666,84"], "explicacion": "Solución: i = 1,1667% mensual → F = 400.000 × [(1,011667)^24 − 1]/0,011667 × 1,011667 → F = 11.133.666,84", "pasos": ["i = 1,1667% mensual", "F = 400.000 × [(1,011667)^24 − 1]/0,011667 × 1,011667", "F = 11.133.666,84"]}, {"id": "Q083", "nivel": 7, "tema": "Anualidades anticipadas", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "Se financian $10.000.000 con 12 cuotas mensuales anticipadas al 2%. ¿Cuál es la cuota?", "opciones": ["$945.595,97", "$833.333,33", "$927.054,87", "$964.507,89"], "correcta": 2, "feedback": ["Esa es la cuota vencida.", "Dividiste sin intereses.", "¡Correcto! Solución: A = P · i(1 + i)^n / {[(1 + i)^n − 1](1 + i)} → (1,02)^12 = 1,268242 → A = 927.054,87", "Multiplicaste por (1 + i); la cuota anticipada se divide."], "explicacion": "Solución: A = P · i(1 + i)^n / {[(1 + i)^n − 1](1 + i)} → (1,02)^12 = 1,268242 → A = 927.054,87", "pasos": ["A = P · i(1 + i)^n / {[(1 + i)^n − 1](1 + i)}", "(1,02)^12 = 1,268242", "A = 927.054,87"]}, {"id": "Q084", "nivel": 7, "tema": "Anualidades anticipadas", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "Un crédito de $12.000.000 se paga con 4 cuotas semestrales anticipadas al 12% NSV. ¿Cuál es la cuota?", "opciones": ["$3.463.097,91", "$3.000.000,00", "$3.527.511,82", "$3.267.073,50"], "correcta": 3, "feedback": ["Esa es la cuota vencida.", "Dividiste sin intereses.", "La tasa semestral es 6%, no 12%.", "¡Correcto! Solución: i = 12%/2 = 6% semestral → A = 12.000.000 × 0,06(1,06)^4 / {[(1,06)^4 − 1](1,06)} → A = 3.267.073,50"], "explicacion": "Solución: i = 12%/2 = 6% semestral → A = 12.000.000 × 0,06(1,06)^4 / {[(1,06)^4 − 1](1,06)} → A = 3.267.073,50", "pasos": ["i = 12%/2 = 6% semestral", "A = 12.000.000 × 0,06(1,06)^4 / {[(1,06)^4 − 1](1,06)}", "A = 3.267.073,50"]}, {"id": "Q085", "nivel": 7, "tema": "Anualidades anticipadas", "tipo": "caso", "tiempo": 120, "puntos": 250, "enunciado": "En el crédito de $10.000.000 a 12 cuotas mensuales anticipadas al 2%, ¿cuánto se paga en total de intereses?", "opciones": ["$11.124.658,43", "$1.347.151,59", "$2.400.000,00", "$1.124.658,43"], "correcta": 3, "feedback": ["Ese es el total pagado; resta el capital.", "Usaste la cuota vencida; el crédito es anticipado.", "Ese es el interés simple sobre el capital inicial, pero el saldo disminuye con cada cuota.", "¡Correcto! Solución: Cuota anticipada = 927.054,87 → Total pagado = 927.054,87 × 12 = 11.124.658,43 → Intereses = 11.124.658,43 − 10.000.000 = 1.124.658,43"], "explicacion": "Solución: Cuota anticipada = 927.054,87 → Total pagado = 927.054,87 × 12 = 11.124.658,43 → Intereses = 11.124.658,43 − 10.000.000 = 1.124.658,43", "pasos": ["Cuota anticipada = 927.054,87", "Total pagado = 927.054,87 × 12 = 11.124.658,43", "Intereses = 11.124.658,43 − 10.000.000 = 1.124.658,43"]}, {"id": "Q086", "nivel": 7, "tema": "Anualidades anticipadas", "tipo": "numerica", "tiempo": 90, "puntos": 200, "enunciado": "Depositas $900.000 al inicio de cada trimestre durante 8 trimestres al 13% NTV. ¿Cuál es el valor futuro?", "opciones": ["$8.074.454,82", "$8.336.874,61", "$7.820.295,23", "$7.200.000,00"], "correcta": 1, "feedback": ["Fórmula vencida; los depósitos son al inicio.", "¡Correcto! Solución: i = 3,25% trimestral → F = 900.000 × [(1,0325)^8 − 1]/0,0325 × 1,0325 → F = 8.336.874,61", "En anticipadas se multiplica por (1 + i).", "Sumaste sin intereses."], "explicacion": "Solución: i = 3,25% trimestral → F = 900.000 × [(1,0325)^8 − 1]/0,0325 × 1,0325 → F = 8.336.874,61", "pasos": ["i = 3,25% trimestral", "F = 900.000 × [(1,0325)^8 − 1]/0,0325 × 1,0325", "F = 8.336.874,61"]}, {"id": "Q087", "nivel": 7, "tema": "Anualidades anticipadas", "tipo": "caso", "tiempo": 120, "puntos": 250, "enunciado": "Una empresa toma un leasing de $50.000.000 a 36 cánones mensuales anticipados al 1,3%. ¿Cuál es el canon?", "opciones": ["$1.770.717,49", "$1.725.561,28", "$1.747.993,58", "$1.388.888,89"], "correcta": 1, "feedback": ["La cuota anticipada se divide entre (1 + i), no se multiplica.", "¡Correcto! Solución: A = P · i(1 + i)^n / {[(1 + i)^n − 1](1 + i)} → (1,013)^36 = 1,591989 → A = 1.725.561,28", "Esa es la cuota vencida; el leasing se paga al inicio.", "Dividiste sin intereses."], "explicacion": "Solución: A = P · i(1 + i)^n / {[(1 + i)^n − 1](1 + i)} → (1,013)^36 = 1,591989 → A = 1.725.561,28", "pasos": ["A = P · i(1 + i)^n / {[(1 + i)^n − 1](1 + i)}", "(1,013)^36 = 1,591989", "A = 1.725.561,28"]}, {"id": "Q088", "nivel": 7, "tema": "Anualidades anticipadas", "tipo": "contrarreloj", "tiempo": 20, "puntos": 150, "enunciado": "Con i = 2% por periodo, ¿por qué factor se multiplica el VP de una anualidad vencida para obtener el de la anticipada?", "opciones": ["0,9804", "1,0200", "0,9800", "0,0200"], "correcta": 1, "feedback": ["Se multiplica por (1 + i), no se divide.", "¡Correcto! Solución: VP anticipada = VP vencida × (1 + i) = VP vencida × 1,02", "Es (1 + i), no (1 − i).", "Es (1 + i), no i."], "explicacion": "Solución: VP anticipada = VP vencida × (1 + i) = VP vencida × 1,02", "pasos": ["VP anticipada = VP vencida × (1 + i) = VP vencida × 1,02"]}, {"id": "Q089", "nivel": 8, "tema": "Gran reto financiero", "tipo": "caso", "tiempo": 120, "puntos": 250, "enunciado": "Debes elegir entre dos créditos: uno al 20% NMV y otro al 21% NSV. ¿Cuál es el primer paso correcto?", "opciones": ["Sumar las dos tasas y dividir entre dos.", "Elegir el de capitalización semestral porque se paga menos veces.", "Elegir el de menor tasa nominal sin más cálculos.", "Convertir ambas tasas a una tasa efectiva comparable (por ejemplo, EA)."], "correcta": 3, "feedback": ["Promediar tasas no permite decidir.", "La frecuencia de pago no basta; se debe comparar la efectiva.", "Las nominales con distinta frecuencia no son comparables.", "¡Correcto! Las nominales con distinta capitalización no se comparan directamente. 20% NMV = 21,94% EA; 21% NSV = 22,10% EA → el primero es más barato."], "explicacion": "Las nominales con distinta capitalización no se comparan directamente. 20% NMV = 21,94% EA; 21% NSV = 22,10% EA → el primero es más barato.", "pasos": []}, {"id": "Q090", "nivel": 8, "tema": "Gran reto financiero", "tipo": "caso", "tiempo": 120, "puntos": 250, "enunciado": "Un estudiante amplía el plazo de su crédito de 24 a 48 cuotas con la misma tasa. ¿Qué ocurre?", "opciones": ["La cuota baja y los intereses totales también bajan.", "La cuota sube porque hay más pagos.", "La cuota baja, pero el total de intereses pagados aumenta.", "No cambia nada porque la tasa es la misma."], "correcta": 2, "feedback": ["Más tiempo de deuda implica más intereses totales.", "Con más pagos, cada pago es menor.", "¡Correcto! Al repartir la deuda en más periodos la cuota disminuye, pero el saldo permanece más tiempo y genera más intereses.", "El plazo cambia la cuota y el total de intereses."], "explicacion": "Al repartir la deuda en más periodos la cuota disminuye, pero el saldo permanece más tiempo y genera más intereses.", "pasos": []}, {"id": "Q091", "nivel": 8, "tema": "Gran reto financiero", "tipo": "caso", "tiempo": 120, "puntos": 250, "enunciado": "Un almacén ofrece pagar un electrodoméstico con cuotas anticipadas o vencidas, a la misma tasa. ¿Qué afirmación es correcta?", "opciones": ["Con cuotas anticipadas se pagan más intereses.", "Ambas modalidades generan los mismos intereses.", "La modalidad no afecta la cuota, solo la fecha.", "Con cuotas anticipadas se pagan menos intereses totales."], "correcta": 3, "feedback": ["Ocurre lo contrario.", "Difieren por el factor (1 + i).", "La cuota anticipada es menor: A_ant = A_venc/(1 + i).", "¡Correcto! Cada cuota anticipada se paga un periodo antes, el saldo baja antes y se generan menos intereses."], "explicacion": "Cada cuota anticipada se paga un periodo antes, el saldo baja antes y se generan menos intereses.", "pasos": []}, {"id": "Q092", "nivel": 8, "tema": "Gran reto financiero", "tipo": "reto", "tiempo": 150, "puntos": 300, "enunciado": "Un crédito de $20.000.000 al 24% NMV se paga en 48 cuotas mensuales vencidas. ¿Cuál es la cuota?", "opciones": ["$4.800.157,40", "$5.252.475,05", "$652.036,71", "$416.666,67"], "correcta": 2, "feedback": ["Usaste 24% como tasa mensual.", "Usaste n = 4 años; con tasa mensual son 48 cuotas.", "¡Correcto! Solución: i = 24%/12 = 2% mensual → A = 20.000.000 × 0,02 / [1 − (1,02)^−48] → A = 652.036,71", "Dividiste sin intereses."], "explicacion": "Solución: i = 24%/12 = 2% mensual → A = 20.000.000 × 0,02 / [1 − (1,02)^−48] → A = 652.036,71", "pasos": ["i = 24%/12 = 2% mensual", "A = 20.000.000 × 0,02 / [1 − (1,02)^−48]", "A = 652.036,71"]}, {"id": "Q093", "nivel": 8, "tema": "Gran reto financiero", "tipo": "reto", "tiempo": 150, "puntos": 300, "enunciado": "Un crédito de $6.000.000 a 19,56% EA se paga en 18 cuotas mensuales vencidas. ¿Cuál es la cuota?", "opciones": ["$382.834,69", "$377.177,04", "$387.316,50", "$1.222.763,35"], "correcta": 0, "feedback": ["¡Correcto! Solución: i mensual = (1 + 19,56%)^(1/12) − 1 = 1,5% → A = 6.000.000 × 0,015 / [1 − (1,015)^−18] → A = 382.834,69", "Esa es la cuota anticipada.", "Dividiste la EA entre 12; una EA se convierte con raíz 12.", "Usaste la EA como tasa mensual."], "explicacion": "Solución: i mensual = (1 + 19,56%)^(1/12) − 1 = 1,5% → A = 6.000.000 × 0,015 / [1 − (1,015)^−18] → A = 382.834,69", "pasos": ["i mensual = (1 + 19,56%)^(1/12) − 1 = 1,5%", "A = 6.000.000 × 0,015 / [1 − (1,015)^−18]", "A = 382.834,69"]}, {"id": "Q094", "nivel": 8, "tema": "Gran reto financiero", "tipo": "reto", "tiempo": 150, "puntos": 300, "enunciado": "Quieres reunir $30.000.000 en 3 años con depósitos mensuales vencidos al 12% NMV. ¿Cuánto depositas cada mes?", "opciones": ["$740.872,45", "$996.429,29", "$833.333,33", "$696.429,29"], "correcta": 3, "feedback": ["Usaste años con 12% y luego dividiste entre 12; trabaja en meses.", "Esa fórmula usa la meta como valor presente.", "Dividiste sin intereses.", "¡Correcto! Solución: i = 1% mensual; n = 36 → A = 30.000.000 × 0,01 / [(1,01)^36 − 1] → A = 696.429,29"], "explicacion": "Solución: i = 1% mensual; n = 36 → A = 30.000.000 × 0,01 / [(1,01)^36 − 1] → A = 696.429,29", "pasos": ["i = 1% mensual; n = 36", "A = 30.000.000 × 0,01 / [(1,01)^36 − 1]", "A = 696.429,29"]}, {"id": "Q095", "nivel": 8, "tema": "Gran reto financiero", "tipo": "reto", "tiempo": 150, "puntos": 300, "enunciado": "Para recibir $2.000.000 al final de cada mes durante 10 años, con 0,8% mensual, ¿cuánto debes tener ahorrado hoy?", "opciones": ["$153.910.450,88", "$400.434.938,82", "$19.147.443,92", "$240.000.000,00"], "correcta": 0, "feedback": ["¡Correcto! Solución: n = 120 meses → P = 2.000.000 × [1 − (1,008)^−120]/0,008 → P = 153.910.450,88", "Ese es el valor futuro de los retiros.", "Con tasa mensual, n son 120 meses.", "Sumaste los retiros sin descontar."], "explicacion": "Solución: n = 120 meses → P = 2.000.000 × [1 − (1,008)^−120]/0,008 → P = 153.910.450,88", "pasos": ["n = 120 meses", "P = 2.000.000 × [1 − (1,008)^−120]/0,008", "P = 153.910.450,88"]}, {"id": "Q096", "nivel": 8, "tema": "Gran reto financiero", "tipo": "reto", "tiempo": 150, "puntos": 300, "enunciado": "Un equipo cuesta $18.000.000 de contado o 12 cuotas mensuales anticipadas de $1.650.000. Con 1,5% mensual, ¿qué conviene?", "opciones": ["Cuotas, porque 1.650.000 es una cuota baja", "Contado, porque el VP de las cuotas es $18.267.344,35", "Cuotas, porque su VP es $17.997.383,59", "Cuotas, porque suman 19.800.000"], "correcta": 1, "feedback": ["Hay que comparar el VP de todas las cuotas contra el contado.", "¡Correcto! Solución: VP cuotas = 1.650.000 × [1 − (1,015)^−12]/0,015 × 1,015 → VP = 18.267.344,35 → Como supera 18.000.000, conviene pagar de contado", "Usaste la fórmula vencida; las cuotas son anticipadas.", "Sumar cuotas sin descontar no permite comparar."], "explicacion": "Solución: VP cuotas = 1.650.000 × [1 − (1,015)^−12]/0,015 × 1,015 → VP = 18.267.344,35 → Como supera 18.000.000, conviene pagar de contado", "pasos": ["VP cuotas = 1.650.000 × [1 − (1,015)^−12]/0,015 × 1,015", "VP = 18.267.344,35", "Como supera 18.000.000, conviene pagar de contado"]}, {"id": "Q097", "nivel": 8, "tema": "Gran reto financiero", "tipo": "reto", "tiempo": 150, "puntos": 300, "enunciado": "Una deuda de $25.000.000 se paga con cuotas mensuales vencidas de $1.000.000 al 1,4%. ¿Cuántas cuotas se necesitan?", "opciones": ["30,99 meses", "25,00 meses", "2,58 meses", "21,59 meses"], "correcta": 0, "feedback": ["¡Correcto! Solución: P·i = 350.000; A − P·i = 650.000 → n = ln(1.000.000/650.000)/ln(1,014) → n = 30,99 meses", "Dividiste sin considerar intereses.", "Ese resultado está en años.", "Usaste la fórmula para valor futuro."], "explicacion": "Solución: P·i = 350.000; A − P·i = 650.000 → n = ln(1.000.000/650.000)/ln(1,014) → n = 30,99 meses", "pasos": ["P·i = 350.000; A − P·i = 650.000", "n = ln(1.000.000/650.000)/ln(1,014)", "n = 30,99 meses"]}, {"id": "Q098", "nivel": 8, "tema": "Gran reto financiero", "tipo": "reto", "tiempo": 150, "puntos": 300, "enunciado": "¿Cuánto se paga en total de intereses en un crédito de $30.000.000 a 60 cuotas mensuales vencidas al 1,2%?", "opciones": ["$12.257.061,57", "$42.257.061,57", "$21.600.000,00", "$31.369.418,04"], "correcta": 0, "feedback": ["¡Correcto! Solución: A = 30.000.000 × 0,012/[1 − (1,012)^−60] = 704.284,36 → Total = A × 60 = 42.257.061,57 → Intereses = 12.257.061,57", "Ese es el total pagado; resta el capital.", "Calculaste interés simple sobre todo el capital, pero el saldo disminuye.", "Ese es el interés si no se pagara nada durante 60 meses."], "explicacion": "Solución: A = 30.000.000 × 0,012/[1 − (1,012)^−60] = 704.284,36 → Total = A × 60 = 42.257.061,57 → Intereses = 12.257.061,57", "pasos": ["A = 30.000.000 × 0,012/[1 − (1,012)^−60] = 704.284,36", "Total = A × 60 = 42.257.061,57", "Intereses = 12.257.061,57"]}, {"id": "Q099", "nivel": 8, "tema": "Gran reto financiero", "tipo": "reto", "tiempo": 150, "puntos": 300, "enunciado": "Abres un fondo con $5.000.000 hoy y depositas $300.000 al final de cada mes durante 24 meses al 1% mensual. ¿Cuánto tendrás?", "opciones": ["$13.548.673,24", "$12.200.000,00", "$13.092.039,46", "$14.440.712,70"], "correcta": 3, "feedback": ["Faltó capitalizar los depósitos mensuales.", "Sumaste sin intereses.", "Faltó capitalizar los 5.000.000 iniciales.", "¡Correcto! Solución: Depósito inicial: 5.000.000 × (1,01)^24 = 6.348.673,24 → Serie: 300.000 × [(1,01)^24 − 1]/0,01 = 8.092.039,46 → Total = 14.440.712,70"], "explicacion": "Solución: Depósito inicial: 5.000.000 × (1,01)^24 = 6.348.673,24 → Serie: 300.000 × [(1,01)^24 − 1]/0,01 = 8.092.039,46 → Total = 14.440.712,70", "pasos": ["Depósito inicial: 5.000.000 × (1,01)^24 = 6.348.673,24", "Serie: 300.000 × [(1,01)^24 − 1]/0,01 = 8.092.039,46", "Total = 14.440.712,70"]}, {"id": "Q100", "nivel": 8, "tema": "Gran reto financiero", "tipo": "reto", "tiempo": 150, "puntos": 300, "enunciado": "Inviertes $4.000.000 a 12% NSV durante 5 años. ¿Cuál es el valor futuro?", "opciones": ["$5.352.902,31", "$6.400.000,00", "$7.049.366,73", "$7.163.390,79"], "correcta": 3, "feedback": ["Son 10 semestres en 5 años.", "Usaste interés simple.", "12% es nominal semestral; la tasa periódica es 6% en 10 semestres.", "¡Correcto! Solución: i semestral = 6%; n = 10 semestres → F = 4.000.000 × (1,06)^10 → F = 7.163.390,79"], "explicacion": "Solución: i semestral = 6%; n = 10 semestres → F = 4.000.000 × (1,06)^10 → F = 7.163.390,79", "pasos": ["i semestral = 6%; n = 10 semestres", "F = 4.000.000 × (1,06)^10", "F = 7.163.390,79"]}]}</script>
+<script>
+"use strict";
+/* ================= Datos y utilidades ================= */
+const BANCO_BASE = JSON.parse(document.getElementById("banco-json").textContent);
+const NIVELES = BANCO_BASE.niveles;
+const $app = document.getElementById("app");
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = n => Math.round(n).toLocaleString("es-CO");
+const ls = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+};
+const COLORES = ["#F2B705","#B39DFF","#2BD47D","#4FC3F7","#FF8A65","#F06292"];
+const FORMULAS = {
+  1:"i = I / P · P = valor presente, F = valor futuro, A = pago periódico, n = periodos",
+  2:"I = P·i·n · F = P(1 + i·n) · P = F/(1 + i·n) · comercial: año de 360 días",
+  3:"F = P(1 + i)^n · P = F/(1 + i)^n · i = (F/P)^(1/n) − 1 · n = ln(F/P)/ln(1 + i)",
+  4:"i = j/m · EA = (1 + i)^m − 1 · i = (1 + EA)^(1/m) − 1 · iv = ia/(1 − ia)",
+  5:"F = P(1 + i)^n · P = F(1 + i)^−n · lleva todo a una misma fecha focal",
+  6:"P = A[1 − (1 + i)^−n]/i · F = A[(1 + i)^n − 1]/i · n = ln[A/(A − P·i)]/ln(1 + i)",
+  7:"P = A[1 − (1 + i)^−n]/i·(1 + i) · F = A[(1 + i)^n − 1]/i·(1 + i) · A = P·i(1 + i)^n/{[(1 + i)^n − 1](1 + i)}",
+  8:"Convierte la tasa al periodo de pago, identifica vencida/anticipada y elige la fórmula"
+};
+const TIPO_NOMBRE = {teorica:"Teórica",contrarreloj:"Contra reloj",numerica:"Ejercicio numérico",caso:"Caso práctico",reto:"Gran reto"};
+const CONFIG_BASE = {
+  expres:{teorica:20,contrarreloj:15,numerica:60,caso:75,reto:90},
+  campana:{teorica:30,contrarreloj:20,numerica:90,caso:120,reto:150},
+  porNivel:5, vidas:3
+};
+let config = ls.get("mf_config", CONFIG_BASE);
+let banco = ls.get("mf_banco", null) || BANCO_BASE.preguntas;
+let perfil = ls.get("mf_perfil", null);
+let historial = ls.get("mf_historial", []);
+const INSIGNIAS = [
+  {id:"despegue",nombre:"Primer Despegue",desc:"Primera respuesta correcta"},
+  {id:"fuego",nombre:"Racha de Fuego",desc:"5 respuestas correctas seguidas"},
+  {id:"rayo",nombre:"Rayo Financiero",desc:"Correcta en menos de 5 segundos"},
+  {id:"interes",nombre:"Maestro del Interés",desc:"Oro en los niveles 2 y 3"},
+  {id:"conversor",nombre:"Conversor Universal",desc:"Oro en el nivel 4"},
+  {id:"tiempo",nombre:"Viajero del Tiempo",desc:"Oro en el nivel 5"},
+  {id:"anualidades",nombre:"Señor de las Anualidades",desc:"Oro en los niveles 6 y 7"},
+  {id:"comandante",nombre:"Comandante Financiero",desc:"Completar el Gran Reto (nivel 8) o una misión Exprés con 8+ aciertos"},
+  {id:"invicto",nombre:"Invicto",desc:"Terminar una misión sin perder vidas"},
+  {id:"sinayuda",nombre:"Sin Ayudas",desc:"Terminar una misión sin usar poderes"}
+];
+const PODERES = [
+  {id:"fifty",nombre:"50/50",desc:"Elimina dos opciones incorrectas"},
+  {id:"tiempo",nombre:"+15 s",desc:"Suma 15 segundos"},
+  {id:"escudo",nombre:"Escudo",desc:"Si fallas, no pierdes vida"},
+  {id:"pista",nombre:"Pista",desc:"Muestra la fórmula clave"},
+  {id:"doble",nombre:"Doble XP",desc:"Duplica los puntos de esta pregunta"}
+];
+const RANGOS = [[1,"Cadete"],[3,"Analista"],[6,"Estratega"],[10,"Comandante Financiero"]];
+function nivelJugador(xp){ return Math.floor(xp/1000)+1; }
+function rango(xp){ const n = nivelJugador(xp); let r = RANGOS[0][1]; for(const [m,nom] of RANGOS) if(n>=m) r = nom; return r; }
+
+/* RNG con semilla (misma secuencia para todos en una sala) */
+function rngDe(semilla){ let h = 2166136261; for(const c of String(semilla)) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+  return () => { h += 0x6D2B79F5; let t = h; t = Math.imul(t ^ t>>>15, t|1); t ^= t + Math.imul(t ^ t>>>7, t|61); return ((t ^ t>>>14)>>>0)/4294967296; }; }
+function barajar(arr, rnd){ const a = arr.slice(); for(let i=a.length-1;i>0;i--){ const j = Math.floor(rnd()*(i+1)); [a[i],a[j]] = [a[j],a[i]]; } return a; }
+function seleccionar(modo, nivel, semilla){
+  const rnd = rngDe(semilla ?? (Date.now()+Math.random()));
+  const activas = banco.filter(q => q.activa !== false);
+  const deNivel = n => barajar(activas.filter(q => q.nivel === n), rnd);
+  if(modo === "campana") return deNivel(nivel).slice(0, config.porNivel);
+  const sel = [];
+  for(let n=1;n<=7;n++){ const q = deNivel(n)[0]; if(q) sel.push(q); }
+  return sel.concat(deNivel(8).slice(0,3));
+}
+
+/* ================= Calificación ================= */
+function calcularPuntos({base, tiempoTotal, tiempoRestante, racha, doble}){
+  const bono = Math.round(base * 0.5 * Math.max(0, tiempoRestante) / tiempoTotal);
+  const mult = racha >= 5 ? 1.5 : racha >= 3 ? 1.2 : 1;
+  return Math.round((base + bono) * mult * (doble ? 2 : 1));
+}
+function medalla(aciertos, total){ const r = aciertos/total; return r >= 1 ? "oro" : r >= .8 ? "plata" : r >= .6 ? "bronce" : null; }
+
+/* ================= Estado global ================= */
+let vista = "inicio", juego = null, reloj = null, sala = null, equipos = null;
+function guardarPerfil(){ ls.set("mf_perfil", perfil); pintarPiloto(); }
+function toast(msg){ const t = document.getElementById("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.id); toast.id = setTimeout(()=>t.hidden = true, 2600); }
+function pintarPiloto(){
+  const el = document.getElementById("piloto");
+  if(!perfil){ el.innerHTML = `<button class="btn chico" type="button" data-ir="registro">Registrarme</button>`; return; }
+  el.innerHTML = `<span class="av" style="background:${esc(perfil.color)}">${esc(perfil.alias.slice(0,2).toUpperCase())}</span>
+    <span><b style="color:var(--texto)">${esc(perfil.alias)}</b><br><span class="eti" style="font-size:10px">${esc(rango(perfil.xp))} · ${fmt(perfil.xp)} XP</span></span>`;
+}
+function ir(v, arg){ detenerReloj(); vista = v; window.scrollTo(0,0); (VISTAS[v]||VISTAS.inicio)(arg); }
+document.addEventListener("click", e => { const b = e.target.closest("[data-ir]"); if(b){ e.preventDefault(); ir(b.dataset.ir, b.dataset.arg); } });
+document.getElementById("ir-inicio").onclick = () => { if(sala) salirSala(); ir("inicio"); };
+
+/* ================= Vistas ================= */
+const VISTAS = {};
+VISTAS.inicio = () => {
+  const d = perfil?.desbloqueado || 1;
+  $app.innerHTML = `
+  <section class="hero">
+    <div>
+      <div class="eti">Proyecto de aula · Ingeniería Económica</div>
+      <h1 style="margin-top:10px">El Desafío de <span class="oro">Ingeniería Económica</span></h1>
+      <p class="lead">Ocho niveles para dominar el valor del dinero en el tiempo, las tasas y las anualidades. Responde contra el reloj, usa tus poderes y escala en el ranking de tu sala.</p>
+      <div class="fila">
+        <button class="btn pri" type="button" data-ir="${perfil ? "modos" : "registro"}">Iniciar misión</button>
+        <button class="btn" type="button" data-ir="ranking">Ranking</button>
+        <button class="btn" type="button" data-ir="logros">Logros</button>
+        <button class="btn" type="button" data-ir="admin">Panel docente</button>
+      </div>
+    </div>
+    <div class="panel marco consola" aria-label="Resumen del banco">
+      <div class="eti" style="margin-bottom:4px">Telemetría de la misión</div>
+      <div class="l"><span>Preguntas en el banco</span><b>${banco.length}</b></div>
+      <div class="l"><span>Niveles</span><b>8</b></div>
+      <div class="l"><span>Misión Exprés (clase)</span><b>10 preguntas · ≈ 12 min</b></div>
+      <div class="l"><span>Vidas · Poderes</span><b>${config.vidas} · 5</b></div>
+      <div class="l"><span>Tu rango</span><b>${perfil ? esc(rango(perfil.xp)) : "Sin registro"}</b></div>
+    </div>
+  </section>
+  <div class="eti" style="margin-top:34px">Mapa de niveles · campaña</div>
+  <div class="mapa">${Object.entries(NIVELES).map(([n,nom]) => {
+    const bloq = +n > d, med = perfil?.medallas?.[n];
+    return `<button class="nodo ${bloq?"bloq":""}" type="button" ${bloq?"disabled":""} data-nivel="${n}">
+      <span class="n">${String(n).padStart(2,"0")}</span><span>${esc(nom)}</span>
+      <span class="med">${med ? "Medalla de " + med : bloq ? "Bloqueado" : "Disponible"}</span></button>`; }).join("")}</div>`;
+  $app.querySelectorAll("[data-nivel]").forEach(b => b.onclick = () => perfil ? iniciarJuego({modo:"campana", nivel:+b.dataset.nivel}) : ir("registro"));
+};
+
+VISTAS.registro = () => {
+  const p = perfil || {alias:"", color:COLORES[0]};
+  $app.innerHTML = `<div class="panel marco" style="max-width:560px;margin:0 auto">
+    <div class="eti">Registro de piloto</div><h2 style="margin:6px 0 18px">¿Cómo te llamamos en el ranking?</h2>
+    <form id="f-reg" class="grid">
+      <label for="alias">Alias (3 a 16 caracteres)<input id="alias" type="text" maxlength="16" required value="${esc(p.alias)}" placeholder="Ej.: JuanE"></label>
+      <div><div class="tenue" style="font-size:13px;margin-bottom:6px">Color de tu insignia</div>
+        <div class="fila" id="colores">${COLORES.map(c => `<button type="button" class="av" data-c="${c}" style="background:${c};width:36px;height:36px;${c===p.color?"outline:2px solid #fff":""}" aria-label="Color ${c}"></button>`).join("")}</div></div>
+      <button class="btn pri" type="submit">Guardar y continuar</button>
+    </form></div>`;
+  let color = p.color;
+  $app.querySelectorAll("[data-c]").forEach(b => b.onclick = () => { color = b.dataset.c; $app.querySelectorAll("[data-c]").forEach(x => x.style.outline = x===b ? "2px solid #fff" : "none"); });
+  document.getElementById("f-reg").onsubmit = e => {
+    e.preventDefault();
+    const alias = document.getElementById("alias").value.trim();
+    if(alias.length < 3){ toast("El alias debe tener al menos 3 caracteres"); return; }
+    perfil = Object.assign({xp:0, insignias:[], medallas:{}, desbloqueado:1}, perfil||{}, {alias, color});
+    guardarPerfil(); ir("modos");
+  };
+};
+
+VISTAS.modos = () => {
+  if(!perfil) return ir("registro");
+  $app.innerHTML = `<div class="eti">Elige tu modo de juego</div><h2 style="margin:6px 0 20px">Centro de despegue</h2>
+  <div class="modos">
+    <div class="panel modo marco"><div class="eti">Recomendado en clase</div><h3>Misión Exprés</h3>
+      <p class="tenue">10 preguntas: una de cada nivel del 1 al 7 y tres del Gran Reto. Tiempos reducidos, 3 vidas y 5 poderes.</p>
+      <span class="dur">≈ 12 minutos</span><button class="btn pri" type="button" id="m-expres">Jugar solo</button></div>
+    <div class="panel modo"><div class="eti">Multijugador en línea</div><h3>Sala con código</h3>
+      <p class="tenue">Crea una sala y comparte el código. Todos responden las mismas 10 preguntas y el ranking se actualiza en vivo en cada celular.</p>
+      <span class="dur">≈ 12 minutos · 2 a 40 jugadores</span>
+      <div class="fila"><button class="btn pri" type="button" id="m-crear">Crear sala</button>
+      <input id="cod-unir" type="text" maxlength="5" placeholder="CÓDIGO" style="width:120px;text-transform:uppercase" aria-label="Código de sala">
+      <button class="btn" type="button" id="m-unir">Unirme</button></div></div>
+    <div class="panel modo"><div class="eti">Multijugador en pantalla compartida</div><h3>Duelo de equipos</h3>
+      <p class="tenue">Para la sesión virtual: el anfitrión comparte pantalla y los equipos responden por turnos. Ideal si no todos pueden entrar a la sala.</p>
+      <span class="dur">≈ 12 minutos · 2 a 6 equipos</span><button class="btn" type="button" id="m-equipos">Configurar equipos</button></div>
+  </div>`;
+  document.getElementById("m-expres").onclick = () => iniciarJuego({modo:"expres"});
+  document.getElementById("m-crear").onclick = () => abrirSala(null);
+  document.getElementById("m-unir").onclick = () => { const c = document.getElementById("cod-unir").value.trim().toUpperCase(); if(!/^[A-Z0-9]{5}$/.test(c)){ toast("Escribe el código de 5 caracteres"); return; } abrirSala(c); };
+  document.getElementById("m-equipos").onclick = () => ir("equipos");
+};
+
+VISTAS.equipos = () => {
+  $app.innerHTML = `<div class="panel marco" style="max-width:640px;margin:0 auto">
+    <div class="eti">Duelo de equipos</div><h2 style="margin:6px 0 8px">Configura los equipos</h2>
+    <p class="tenue">Las 10 preguntas se reparten por turnos. Cada equipo tiene 3 vidas y un uso de cada poder.</p>
+    <form id="f-eq" class="grid" style="margin-top:14px">
+      ${[1,2,3,4,5,6].map(i => `<label for="eq${i}">Equipo ${i}${i>2?" (opcional)":""}<input id="eq${i}" type="text" maxlength="18" value="${i<=3?["Alfa","Beta","Gamma"][i-1]:""}"></label>`).join("")}
+      <button class="btn pri" type="submit">Comenzar duelo</button></form></div>`;
+  document.getElementById("f-eq").onsubmit = e => {
+    e.preventDefault();
+    const nombres = [1,2,3,4,5,6].map(i => document.getElementById("eq"+i).value.trim()).filter(Boolean);
+    if(nombres.length < 2){ toast("Se necesitan al menos 2 equipos"); return; }
+    iniciarJuego({modo:"equipos", equipos:nombres});
+  };
+};
+
+/* ================= Juego ================= */
+function nuevoJugador(nombre, color){ return {nombre, color, puntaje:0, vidas:config.vidas, racha:0, aciertos:0, usados:[], perdioVida:false, respondidas:0}; }
+function iniciarJuego({modo, nivel, equipos:eqs, semilla}){
+  const preguntas = seleccionar(modo === "campana" ? "campana" : "expres", nivel, semilla);
+  const tiempos = modo === "campana" ? config.campana : config.expres;
+  const jugadores = modo === "equipos" ? eqs.map((n,i) => nuevoJugador(n, COLORES[i])) : [nuevoJugador(perfil.alias, perfil.color)];
+  juego = {modo, nivel, preguntas, tiempos, jugadores, idx:0, turno:0, activos:{}, eliminadas:[], pista:false,
+           respondida:null, insigniasNuevas:[], mejorRacha:0};
+  if(sala){ if(sala.anfitrion){ sala.ronda = (sala.ronda||0) + 1; publicarSala({estado:"jugando", ronda:sala.ronda, puntaje:0, aciertos:0, idx:0}); } else publicarSala({estado:"jugando", puntaje:0, aciertos:0, idx:0}); }
+  mostrarPregunta();
+}
+function jugadorActual(){ return juego.jugadores[juego.modo === "equipos" ? juego.turno % juego.jugadores.length : 0]; }
+function preguntaActual(){ return juego.preguntas[juego.idx]; }
+function mostrarPregunta(){
+  vista = "juego";
+  const q = preguntaActual(), j = jugadorActual();
+  juego.activos = {}; juego.eliminadas = []; juego.pista = false; juego.respondida = null;
+  juego.total = juego.tiempos[q.tipo] || q.tiempo;
+  juego.restante = juego.total; juego.inicioMs = performance.now();
+  pintarJuego(); arrancarReloj();
+}
+function arrancarReloj(){
+  detenerReloj();
+  reloj = setInterval(() => {
+    juego.restante = Math.max(0, juego.total - (performance.now() - juego.inicioMs)/1000);
+    pintarReloj();
+    if(juego.restante <= 0){ detenerReloj(); responder(-1); }
+  }, 200);
+}
+function detenerReloj(){ if(reloj){ clearInterval(reloj); reloj = null; } }
+function svgVida(llena){ return `<svg class="vida" viewBox="0 0 24 22" aria-hidden="true"><path d="M12 21 2.5 11.6A5.6 5.6 0 0 1 12 4.4a5.6 5.6 0 0 1 9.5 7.2Z" fill="${llena?"#FF5470":"none"}" stroke="${llena?"#FF5470":"#2A3570"}" stroke-width="2"/></svg>`; }
+function pintarReloj(){
+  const el = document.getElementById("reloj"); if(!el) return;
+  const fr = juego.restante / juego.total, C = 2*Math.PI*32;
+  el.querySelector("circle.p").setAttribute("stroke-dasharray", `${C*fr} ${C}`);
+  el.querySelector("circle.p").setAttribute("stroke", fr < .25 ? "#FF5470" : fr < .5 ? "#F2B705" : "#B39DFF");
+  el.querySelector(".t").textContent = Math.ceil(juego.restante);
+  el.classList.toggle("critico", fr < .25);
+}
+function pintarJuego(){
+  const q = preguntaActual(), j = jugadorActual(), r = juego.respondida;
+  const etiqueta = juego.modo === "campana" ? `Nivel ${juego.nivel} · ${esc(NIVELES[juego.nivel])}` : `${juego.modo === "equipos" ? "Duelo de equipos" : "Misión Exprés"} · Nivel ${q.nivel}: ${esc(q.tema)}`;
+  const C = 2*Math.PI*32;
+  $app.innerHTML = `<div class="juego">
+  <section class="panel marco" aria-live="polite">
+    <div class="barra">
+      <div id="reloj" class="reloj" role="timer" aria-label="Tiempo restante"><svg width="74" height="74" viewBox="0 0 74 74"><circle cx="37" cy="37" r="32" fill="none" stroke="#2A3570" stroke-width="6"/><circle class="p" cx="37" cy="37" r="32" fill="none" stroke="#B39DFF" stroke-width="6" stroke-linecap="round" stroke-dasharray="${C} ${C}"/></svg><span class="t">${Math.ceil(juego.restante)}</span></div>
+      <div style="display:grid;gap:6px;min-width:0;flex:1">
+        <div class="eti">${etiqueta}</div>
+        <div class="fila" style="gap:8px">
+          <span class="chip">Pregunta ${juego.idx+1} de ${juego.preguntas.length}</span>
+          <span class="chip mor">${TIPO_NOMBRE[q.tipo]} · ${q.puntos} pts</span>
+          <span class="chip oro">${fmt(j.puntaje)} XP</span>
+          ${j.racha >= 2 ? `<span class="chip oro">Racha ×${j.racha}</span>` : ""}
+          <span class="vidas" aria-label="${j.vidas} vidas">${Array.from({length:config.vidas},(_,k)=>svgVida(k<j.vidas)).join("")}</span>
+        </div>
+      </div>
+    </div>
+    ${juego.modo === "equipos" ? `<div class="chip" style="display:inline-flex;gap:8px;align-items:center;margin-bottom:6px"><span class="av" style="width:18px;height:18px;background:${esc(j.color)}"></span>Turno de: <b style="color:var(--texto)">${esc(j.nombre)}</b></div>` : ""}
+    <p class="pregunta">${esc(q.enunciado)}</p>
+    <div class="opciones">${q.opciones.map((o,k) => {
+      let cl = ""; if(r){ if(k === q.correcta) cl = "bien"; else if(k === r.opcion) cl = "malo"; else cl = "fuera"; } else if(juego.eliminadas.includes(k)) cl = "fuera";
+      return `<button class="op ${cl}" type="button" data-op="${k}" ${r || juego.eliminadas.includes(k) ? "disabled" : ""}><span class="k">${"ABCD"[k]}</span><span class="tx">${esc(o)}</span></button>`; }).join("")}</div>
+    ${juego.pista && !r ? `<div class="pista"><b>Pista:</b> ${esc(FORMULAS[q.nivel])}${q.pasos && q.pasos.length > 1 ? `<br>Primer paso: ${esc(q.pasos[0])}` : ""}</div>` : ""}
+    ${r ? pintarFeedback(q, r) : `<div class="poderes">${PODERES.map(p => {
+      const usado = j.usados.includes(p.id), act = juego.activos[p.id];
+      return `<button class="poder ${act?"activo":""}" type="button" data-poder="${p.id}" ${usado?"disabled":""} title="${esc(p.desc)}">${iconoPoder(p.id)}${esc(p.nombre)}</button>`; }).join("")}</div>`}
+  </section>
+  <aside class="rail">${pintarRail()}</aside></div>`;
+  pintarReloj();
+  $app.querySelectorAll("[data-op]").forEach(b => b.onclick = () => responder(+b.dataset.op));
+  $app.querySelectorAll("[data-poder]").forEach(b => b.onclick = () => usarPoder(b.dataset.poder));
+  const sig = document.getElementById("siguiente"); if(sig){ sig.onclick = siguiente; sig.focus(); }
+}
+function iconoPoder(id){
+  const p = {fifty:'<path d="M4 12h16M12 4v16" stroke-width="2.2"/>',tiempo:'<circle cx="12" cy="13" r="7" fill="none" stroke-width="2"/><path d="M12 9v4l3 2M10 3h4" stroke-width="2"/>',
+    escudo:'<path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6Z" fill="none" stroke-width="2"/>',pista:'<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3Z" fill="none" stroke-width="2"/>',
+    doble:'<path d="m12 3 2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7Z" fill="none" stroke-width="2"/>'}[id];
+  return `<svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+}
+function pintarFeedback(q, r){
+  const ok = r.correcta, txt = r.opcion >= 0 ? q.feedback[r.opcion].replace(/^¡Correcto! /,"") : "Se agotó el tiempo.";
+  const ultimo = juego.idx >= juego.preguntas.length - 1 || juego.terminar;
+  return `<div class="feedback ${ok?"ok":"no"}">
+    <h3><span>${ok ? "¡Correcto!" : r.opcion < 0 ? "Tiempo agotado" : "Respuesta incorrecta"}</span><span style="font-family:var(--mono);color:${ok?"var(--ok)":"var(--mal)"}">${ok ? "+"+fmt(r.puntos)+" XP" : r.escudo ? "Escudo activado: conservas tu vida" : "−1 vida"}</span></h3>
+    <p style="margin:0">${esc(txt)}</p>
+    ${!ok ? `<p style="margin:0"><b>Respuesta correcta:</b> ${esc(q.opciones[q.correcta])}</p>` : ""}
+    ${q.pasos && q.pasos.length ? `<ol class="pasos">${q.pasos.map(p => `<li>${esc(p)}</li>`).join("")}</ol>` : !ok ? `<p class="tenue" style="margin:0">${esc(q.explicacion)}</p>` : ""}
+    <div class="fila" style="justify-content:flex-end"><button class="btn pri" id="siguiente" type="button">${ultimo ? "Ver resultados" : "Siguiente pregunta"}</button></div></div>`;
+}
+function usarPoder(id){
+  const j = jugadorActual(), q = preguntaActual();
+  if(j.usados.includes(id) || juego.respondida) return;
+  j.usados.push(id);
+  if(id === "fifty"){ const malas = q.opciones.map((_,k)=>k).filter(k => k !== q.correcta); juego.eliminadas = barajar(malas, Math.random).slice(0,2); }
+  if(id === "tiempo"){ juego.total += 15; }
+  if(id === "escudo" || id === "doble") juego.activos[id] = true;
+  if(id === "pista") juego.pista = true;
+  toast(PODERES.find(p => p.id === id).nombre + " activado");
+  pintarJuego();
+}
+function responder(opcion){
+  if(juego.respondida) return;
+  detenerReloj();
+  const q = preguntaActual(), j = jugadorActual();
+  const correcta = opcion === q.correcta, seg = (performance.now() - juego.inicioMs)/1000;
+  const r = {opcion, correcta, puntos:0, escudo:false};
+  j.respondidas++;
+  if(correcta){
+    j.racha++; j.aciertos++; juego.mejorRacha = Math.max(juego.mejorRacha, j.racha);
+    r.puntos = calcularPuntos({base:q.puntos, tiempoTotal:juego.total, tiempoRestante:juego.restante, racha:j.racha, doble:juego.activos.doble});
+    j.puntaje += r.puntos;
+    if(juego.modo !== "equipos"){ if(j.aciertos === 1) ganar("despegue"); if(j.racha >= 5) ganar("fuego"); if(seg < 5) ganar("rayo"); }
+  } else {
+    j.racha = 0;
+    if(juego.activos.escudo) r.escudo = true; else { j.vidas--; j.perdioVida = true; }
+  }
+  juego.respondida = r;
+  if(juego.modo !== "equipos" && j.vidas <= 0) juego.terminar = true;
+  if(juego.modo === "equipos" && juego.jugadores.every(x => x.vidas <= 0)) juego.terminar = true;
+  if(sala) publicarSala({puntaje:j.puntaje, aciertos:j.aciertos, idx:juego.idx+1, vidas:j.vidas});
+  pintarJuego();
+}
+function siguiente(){
+  if(juego.terminar || juego.idx >= juego.preguntas.length - 1) return finalizar();
+  juego.idx++;
+  if(juego.modo === "equipos"){ do { juego.turno++; } while(jugadorActual().vidas <= 0); }
+  mostrarPregunta();
+}
+function ganar(id){
+  if(!perfil || perfil.insignias.includes(id)) return;
+  perfil.insignias.push(id); juego.insigniasNuevas.push(id);
+  toast("Insignia desbloqueada: " + INSIGNIAS.find(x => x.id === id).nombre);
+}
+function finalizar(){
+  detenerReloj();
+  const j = juego.jugadores[0], total = juego.preguntas.length;
+  let med = null;
+  if(juego.modo !== "equipos"){
+    perfil.xp += j.puntaje;
+    if(j.respondidas === total && !j.perdioVida) ganar("invicto");
+    if(j.respondidas === total && j.usados.length === 0) ganar("sinayuda");
+    if(juego.modo === "campana"){
+      med = medalla(j.aciertos, total);
+      const orden = {oro:3, plata:2, bronce:1};
+      if(med && (orden[med] > (orden[perfil.medallas[juego.nivel]]||0))) perfil.medallas[juego.nivel] = med;
+      if(j.aciertos >= 3 && juego.nivel < 8) perfil.desbloqueado = Math.max(perfil.desbloqueado||1, juego.nivel+1);
+      const M = perfil.medallas;
+      if(M[2]==="oro" && M[3]==="oro") ganar("interes");
+      if(M[4]==="oro") ganar("conversor");
+      if(M[5]==="oro") ganar("tiempo");
+      if(M[6]==="oro" && M[7]==="oro") ganar("anualidades");
+      if(juego.nivel === 8 && j.aciertos >= 3) ganar("comandante");
+    } else if(j.aciertos >= 8) ganar("comandante");
+    guardarPerfil();
+    historial.push({alias:perfil.alias, color:perfil.color, puntaje:j.puntaje, aciertos:j.aciertos, total, modo:juego.modo, nivel:juego.nivel||null, fecha:new Date().toISOString().slice(0,10)});
+    historial = historial.sort((a,b)=>b.puntaje-a.puntaje).slice(0,50); ls.set("mf_historial", historial);
+  }
+  if(sala) publicarSala({estado:"fin", puntaje:j.puntaje, aciertos:j.aciertos, idx:total});
+  ir("resultados", med);
+}
+VISTAS.resultados = med => {
+  if(!juego) return ir("inicio");
+  const total = juego.preguntas.length;
+  if(juego.modo === "equipos"){
+    const orden = juego.jugadores.slice().sort((a,b)=>b.puntaje-a.puntaje);
+    $app.innerHTML = `<div class="panel marco" style="max-width:720px;margin:0 auto;display:grid;gap:18px">
+      <div class="eti">Duelo de equipos · resultado final</div>
+      <h2>Gana ${esc(orden[0].nombre)} con <span style="color:var(--oro)">${fmt(orden[0].puntaje)} XP</span></h2>
+      <ol class="rank">${orden.map((e,k) => `<li><span class="pos">${k+1}</span><span class="av" style="background:${esc(e.color)}">${esc(e.nombre.slice(0,2).toUpperCase())}</span><span class="nom">${esc(e.nombre)}<span class="sub">${e.aciertos} aciertos · ${e.vidas} vidas</span></span><span class="pts">${fmt(e.puntaje)}</span></li>`).join("")}</ol>
+      <div class="fila"><button class="btn pri" type="button" data-ir="equipos">Nuevo duelo</button><button class="btn" type="button" data-ir="inicio">Inicio</button></div></div>`;
+    return;
+  }
+  const j = juego.jugadores[0];
+  $app.innerHTML = `<div class="juego"><section class="panel marco" style="display:grid;gap:18px">
+    <div class="eti">${juego.modo === "campana" ? "Nivel " + juego.nivel + " · " + esc(NIVELES[juego.nivel]) : "Misión Exprés"} · informe de misión</div>
+    <div class="fila" style="gap:24px;align-items:flex-end">
+      <div><div class="resultado-num">${fmt(j.puntaje)}</div><div class="tenue">XP obtenidos</div></div>
+      <div><div class="resultado-num" style="color:var(--morado2)">${j.aciertos}/${total}</div><div class="tenue">aciertos</div></div>
+      ${med ? svgMedalla(med) : ""}
+    </div>
+    ${juego.terminar && j.respondidas < total ? `<p class="tenue" style="margin:0">Te quedaste sin vidas en la pregunta ${j.respondidas}. Repasa las fórmulas y vuelve a intentarlo.</p>` : ""}
+    ${med ? `<p style="margin:0">Medalla de <b style="color:var(--oro)">${med}</b> en este nivel.${juego.nivel < 8 && j.aciertos >= 3 ? " Nivel " + (juego.nivel+1) + " desbloqueado." : ""}</p>` : juego.modo === "campana" ? `<p style="margin:0">Necesitas 3 aciertos para desbloquear el siguiente nivel.</p>` : ""}
+    ${juego.insigniasNuevas.length ? `<div><div class="eti" style="margin-bottom:8px">Insignias nuevas</div><div class="insignias">${juego.insigniasNuevas.map(id => tarjetaInsignia(INSIGNIAS.find(x=>x.id===id), true)).join("")}</div></div>` : ""}
+    <div class="fila"><button class="btn pri" type="button" id="otra">Jugar de nuevo</button><button class="btn" type="button" data-ir="logros">Ver logros</button><button class="btn" type="button" data-ir="inicio">Inicio</button></div>
+  </section><aside class="rail">${pintarRail()}</aside></div>`;
+  document.getElementById("otra").onclick = () => sala ? ir("lobby") : iniciarJuego({modo:juego.modo, nivel:juego.nivel});
+};
+function svgMedalla(tipo){
+  const c = {oro:["#F2B705","#FFE08A"], plata:["#AEB6D6","#E6EAF8"], bronce:["#C8794A","#EBB38F"]}[tipo];
+  return `<svg class="medalla" viewBox="0 0 90 90" role="img" aria-label="Medalla de ${tipo}"><path d="M30 4h12l8 26H38Z" fill="#7C4DFF"/><path d="M60 4H48l-8 26h12Z" fill="#B39DFF"/><circle cx="45" cy="56" r="28" fill="${c[0]}"/><circle cx="45" cy="56" r="20" fill="none" stroke="${c[1]}" stroke-width="3"/><text x="45" y="63" text-anchor="middle" font-family="Chakra Petch,sans-serif" font-weight="700" font-size="20" fill="#0A0F24">$</text></svg>`;
+}
+function tarjetaInsignia(i, on){
+  return `<div class="ins ${on?"":"no"}"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 3 42 13v22L24 45 6 35V13Z" fill="${on?"#2B1E66":"#18224A"}" stroke="${on?"#F2B705":"#2A3570"}" stroke-width="2.5"/><path d="m24 14 3 6.5 7 .8-5.2 4.8 1.4 7L24 29.5l-6.2 3.6 1.4-7-5.2-4.8 7-.8Z" fill="${on?"#F2B705":"#2A3570"}"/></svg><b>${esc(i.nombre)}</b><span class="tenue" style="font-size:13px">${esc(i.desc)}</span></div>`;
+}
+function pintarRail(){
+  if(juego && juego.modo === "equipos"){
+    const orden = juego.jugadores.map((e,k)=>({...e,k})).sort((a,b)=>b.puntaje-a.puntaje);
+    return `<div class="panel"><div class="eti" style="margin-bottom:10px">Marcador de equipos</div><ol class="rank">${orden.map((e,p) => `<li class="${e.k===juego.turno%juego.jugadores.length?"yo":""}"><span class="pos">${p+1}</span><span class="av" style="background:${esc(e.color)}">${esc(e.nombre.slice(0,2).toUpperCase())}</span><span class="nom">${esc(e.nombre)}<span class="sub">${e.aciertos} aciertos · ${e.vidas} vidas</span></span><span class="pts">${fmt(e.puntaje)}</span></li>`).join("")}</ol></div>`;
+  }
+  if(sala) return `<div class="panel"><div class="eti" style="margin-bottom:10px">Ranking en vivo · sala ${esc(sala.codigo)}</div><ol class="rank" id="rank-sala">${filasSala()}</ol></div>`;
+  return `<div class="panel"><div class="eti" style="margin-bottom:10px">Tus mejores misiones</div><ol class="rank">${historial.slice(0,6).map((h,k) => `<li><span class="pos">${k+1}</span><span class="av" style="background:${esc(h.color)}">${esc(h.alias.slice(0,2).toUpperCase())}</span><span class="nom">${esc(h.alias)}<span class="sub">${h.modo==="campana"?"Nivel "+h.nivel:"Exprés"} · ${h.aciertos}/${h.total}</span></span><span class="pts">${fmt(h.puntaje)}</span></li>`).join("") || `<li><span></span><span></span><span class="tenue">Aún no hay misiones</span><span></span></li>`}</ol></div>
+  ${perfil ? `<div class="panel"><div class="eti" style="margin-bottom:6px">Perfil</div><b>${esc(perfil.alias)}</b><div class="tenue" style="font-size:13px">${esc(rango(perfil.xp))} · nivel ${nivelJugador(perfil.xp)} · ${fmt(perfil.xp)} XP · ${perfil.insignias.length}/10 insignias</div></div>` : ""}`;
+}
+
+/* ================= Ranking y logros ================= */
+VISTAS.ranking = () => {
+  $app.innerHTML = `<div class="eti">Ranking</div><h2 style="margin:6px 0 18px">Tabla de comandantes</h2>
+  <div class="panel"><ol class="rank">${historial.map((h,k) => `<li><span class="pos">${k+1}</span><span class="av" style="background:${esc(h.color)}">${esc(h.alias.slice(0,2).toUpperCase())}</span><span class="nom">${esc(h.alias)}<span class="sub">${h.modo==="campana"?"Nivel "+h.nivel:"Misión Exprés"} · ${h.aciertos}/${h.total} aciertos · ${h.fecha}</span></span><span class="pts">${fmt(h.puntaje)}</span></li>`).join("") || `<li><span></span><span></span><span class="tenue">Juega una misión para aparecer aquí. En una sala en línea verás el ranking en vivo de todos los jugadores.</span><span></span></li>`}</ol></div>`;
+};
+VISTAS.logros = () => {
+  const p = perfil || {insignias:[], medallas:{}, xp:0};
+  $app.innerHTML = `<div class="eti">Logros</div><h2 style="margin:6px 0 6px">Insignias y medallas</h2>
+  <p class="tenue" style="margin:0 0 18px">${perfil ? `${esc(rango(p.xp))} · nivel ${nivelJugador(p.xp)} · ${fmt(p.xp)} XP · ${p.insignias.length} de 10 insignias` : "Regístrate para empezar a ganar insignias."}</p>
+  <div class="insignias">${INSIGNIAS.map(i => tarjetaInsignia(i, p.insignias.includes(i.id))).join("")}</div>
+  <div class="eti" style="margin:28px 0 10px">Medallas por nivel</div>
+  <div class="mapa" style="margin-top:0">${Object.entries(NIVELES).map(([n,nom]) => `<div class="nodo ${p.medallas[n]?"":"bloq"}" style="justify-items:start">${p.medallas[n] ? svgMedalla(p.medallas[n]).replace('class="medalla"','class="medalla" style="width:48px;height:48px"') : `<span class="n">${String(n).padStart(2,"0")}</span>`}<span>${esc(nom)}</span><span class="med">${p.medallas[n] ? "Medalla de " + p.medallas[n] : "Sin medalla"}</span></div>`).join("")}</div>
+  <div class="eti" style="margin:28px 0 10px">Reglas de medallas</div>
+  <p class="tenue" style="margin:0;max-width:70ch">Campaña por nivel (5 preguntas): oro con 5 aciertos, plata con 4 y bronce con 3. Con 3 aciertos se desbloquea el siguiente nivel.</p>`;
+};
+
+/* ================= Sala en línea (Firebase Firestore) ================= */
+let fbEstado = null;
+async function obtenerFb(){
+  if(fbEstado) return fbEstado;
+  const cfg = window.FIREBASE_CONFIG || {};
+  if(!cfg.apiKey || !cfg.projectId || !window.firebase){ return null; }
+  try{
+    if(!firebase.apps.length) firebase.initializeApp(cfg);
+    const cred = await firebase.auth().signInAnonymously();
+    fbEstado = {db: firebase.firestore(), uid: cred.user.uid};
+    return fbEstado;
+  }catch(e){ console.error("Firebase:", e); return null; }
+}
+function codigoNuevo(){ const a = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; return Array.from({length:5},()=>a[Math.floor(Math.random()*a.length)]).join(""); }
+async function abrirSala(codigo){
+  const anfitrion = !codigo; codigo = codigo || codigoNuevo();
+  $app.innerHTML = `<div class="panel" style="max-width:560px;margin:0 auto"><div class="eti">Conectando</div><h2 style="margin-top:6px">Abriendo la sala ${esc(codigo)}…</h2></div>`;
+  const f = await obtenerFb();
+  if(!f) return sinSala("sin-config");
+  try{
+    const ref = f.db.collection("salas").doc(codigo);
+    if(anfitrion){
+      await ref.set({anfitrion:f.uid, estado:"espera", ronda:0, creada:firebase.firestore.FieldValue.serverTimestamp()});
+    } else {
+      const s = await ref.get();
+      if(!s.exists){ toast("No existe una sala con el código " + codigo); return ir("modos"); }
+    }
+    sala = {codigo, anfitrion, ref, uid:f.uid, jugadores:[], info:null, rondaJugada:0};
+    if(!anfitrion){ const s = await ref.get(); const d = s.data() || {}; if(d.estado === "jugando") sala.rondaVista = d.ronda; }
+    sala.off1 = ref.onSnapshot(d => { sala.info = d.data() || null; actualizarSala(); }, e => console.error(e));
+    sala.off2 = ref.collection("jugadores").onSnapshot(q => { sala.jugadores = q.docs.map(d => ({id:d.id, ...d.data()})); actualizarSala(); }, e => console.error(e));
+    await ref.collection("jugadores").doc(f.uid).set({alias:perfil.alias, color:perfil.color, rol:anfitrion?"anfitrion":"jugador", estado:"lobby", puntaje:0, aciertos:0, idx:0, vidas:config.vidas, actualizado:firebase.firestore.FieldValue.serverTimestamp()});
+    ir("lobby");
+  }catch(e){ console.error(e); sinSala(e && e.code); }
+}
+function sinSala(code){
+  sala = null;
+  const sinConfig = code === "sin-config";
+  $app.innerHTML = `<div class="panel marco" style="max-width:640px;margin:0 auto;display:grid;gap:12px">
+    <div class="eti">Sala en línea no disponible</div><h2>${sinConfig ? "Las salas en línea aún no están configuradas" : "No fue posible conectar con el servidor de salas"}</h2>
+    <p class="tenue" style="margin:0">${sinConfig ? "El anfitrión debe pegar la configuración de su proyecto Firebase en este archivo (ver guía de publicación)." : "Revisa tu conexión a internet e inténtalo de nuevo." + (code ? " (Código: " + esc(code) + ")" : "")}</p>
+    <p style="margin:0">Mientras tanto puedes jugar la <b>Misión Exprés</b> individual o el <b>Duelo de equipos</b> en pantalla compartida.</p>
+    <div class="fila"><button class="btn pri" type="button" data-ir="equipos">Ir a Duelo de equipos</button><button class="btn" type="button" data-ir="modos">Volver</button></div></div>`;
+}
+function publicarSala(patch){
+  if(!sala) return;
+  const datos = {...patch}; delete datos.ronda;
+  datos.actualizado = firebase.firestore.FieldValue.serverTimestamp();
+  sala.ref.collection("jugadores").doc(sala.uid).set(datos, {merge:true}).catch(e => console.error(e));
+  if(sala.anfitrion && patch.ronda) sala.ref.update({estado:"jugando", ronda:patch.ronda}).catch(e => console.error(e));
+}
+function jugadoresSala(){ return sala ? sala.jugadores : []; }
+function filasSala(){
+  const js = jugadoresSala().slice().sort((a,b)=>(+b.puntaje||0)-(+a.puntaje||0) || (+b.aciertos||0)-(+a.aciertos||0));
+  if(!js.length) return `<li><span></span><span></span><span class="tenue">Esperando jugadores…</span><span></span></li>`;
+  return js.map((s,k) => { const al = String(s.alias||"Piloto").slice(0,16), col = /^#[0-9A-Fa-f]{6}$/.test(s.color) ? s.color : "#B39DFF";
+    const est = s.estado === "fin" ? "terminó" : s.estado === "jugando" ? `pregunta ${Math.min(+s.idx||0,10)}/10` : "en sala";
+    return `<li class="${s.id === sala.uid ? "yo" : ""}"><span class="pos">${k+1}</span><span class="av" style="background:${col}">${esc(al.slice(0,2).toUpperCase())}</span><span class="nom">${esc(al)}${s.rol==="anfitrion"?" ★":""}<span class="sub">${+s.aciertos||0} aciertos · ${est}</span></span><span class="pts">${fmt(+s.puntaje||0)}</span></li>`; }).join("");
+}
+function actualizarSala(){
+  if(!sala) return;
+  for(const id of ["rank-sala","lobby-lista","tablero-lista"]){ const el = document.getElementById(id); if(el) el.innerHTML = filasSala(); }
+  const n = document.getElementById("tablero-n"); if(n) n.textContent = jugadoresSala().length;
+  if(vista === "lobby" && !sala.anfitrion && sala.info && sala.info.estado === "jugando"){
+    const r = +sala.info.ronda || 0;
+    if(r > (sala.rondaJugada||0)){ sala.rondaJugada = r; iniciarJuego({modo:"expres", semilla:sala.codigo + "-" + r}); }
+  }
+}
+VISTAS.lobby = () => {
+  if(!sala) return ir("modos");
+  publicarSala({estado:"lobby", puntaje:0, aciertos:0, idx:0, vidas:config.vidas});
+  $app.innerHTML = `<div class="juego"><section class="panel marco" style="display:grid;gap:14px">
+    <div class="eti">Sala de espera · Misión Exprés</div>
+    <div>Código de la sala</div><div class="codigo">${esc(sala.codigo)}</div>
+    <p class="tenue" style="margin:0">Comparte el enlace de esta página y este código. ${sala.anfitrion ? "Cuando todos estén dentro, inicia la misión: todos reciben las mismas 10 preguntas." : "La misión empieza cuando el anfitrión la inicie."}</p>
+    <div class="fila">${sala.anfitrion ? `<button class="btn oro" type="button" id="iniciar">Iniciar misión para todos</button><button class="btn" type="button" id="tablero">Proyectar ranking</button>` : `<span class="chip mor">Esperando al anfitrión…</span>`}
+    <button class="btn" type="button" id="salir">Salir de la sala</button></div>
+  </section><aside class="rail"><div class="panel"><div class="eti" style="margin-bottom:10px">Jugadores conectados</div><ol class="rank" id="lobby-lista">${filasSala()}</ol></div></aside></div>`;
+  const ini = document.getElementById("iniciar"); if(ini) ini.onclick = () => iniciarJuego({modo:"expres", semilla:sala.codigo + "-" + ((sala.ronda||0)+1)});
+  const tab = document.getElementById("tablero"); if(tab) tab.onclick = () => { sala.ronda = (sala.ronda||0) + 1; sala.ref.collection("jugadores").doc(sala.uid).delete().catch(()=>{}); sala.ref.update({estado:"jugando", ronda:sala.ronda}).catch(()=>{}); ir("tablero"); };
+  document.getElementById("salir").onclick = () => { salirSala(); ir("modos"); };
+};
+VISTAS.tablero = () => {
+  if(!sala) return ir("modos");
+  $app.innerHTML = `<div class="panel marco" style="display:grid;gap:14px">
+    <div class="fila" style="justify-content:space-between"><div><div class="eti">Ranking en vivo · sala</div><div class="codigo">${esc(sala.codigo)}</div></div>
+    <div class="tenue"><span id="tablero-n" style="font-family:var(--display);font-size:32px;color:var(--oro)">${jugadoresSala().length}</span> pilotos</div></div>
+    <p class="tenue" style="margin:0">La misión ya inició para todos. Los jugadores que entren con el código empiezan de inmediato.</p>
+    <ol class="rank" id="tablero-lista" style="font-size:17px">${filasSala()}</ol>
+    <div class="fila"><button class="btn" type="button" id="t-salir">Cerrar sala</button></div></div>`;
+  document.getElementById("t-salir").onclick = () => { salirSala(); ir("modos"); };
+};
+function salirSala(){ if(sala){ try{ sala.off1 && sala.off1(); sala.off2 && sala.off2(); }catch(e){} sala = null; } }
+
+/* ================= Panel docente ================= */
+let filtroNivel = 0, editando = null;
+VISTAS.admin = () => {
+  const lista = banco.filter(q => !filtroNivel || q.nivel === filtroNivel);
+  $app.innerHTML = `<div class="fila" style="justify-content:space-between"><div><div class="eti">Panel docente</div><h2 style="margin-top:6px">Banco de preguntas y configuración</h2></div>
+    <div class="fila"><button class="btn pri" type="button" id="nueva">Agregar pregunta</button><button class="btn" type="button" id="exportar">Copiar banco (JSON)</button></div></div>
+  <p class="tenue" style="max-width:75ch">Los cambios se guardan en este navegador y aplican a las partidas que se jueguen desde él (por ejemplo, el Duelo de equipos que proyecta el anfitrión). En la versión completa (Node + Firebase) el panel escribe en la base de datos y requiere rol de administrador.</p>
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-bottom:18px">
+    <div class="panel"><div class="eti" style="margin-bottom:10px">Tiempos Misión Exprés (s)</div><div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:10px">
+      ${Object.keys(TIPO_NOMBRE).map(t => `<label for="t-${t}">${TIPO_NOMBRE[t]}<input id="t-${t}" type="number" min="5" max="300" value="${config.expres[t]}"></label>`).join("")}</div></div>
+    <div class="panel"><div class="eti" style="margin-bottom:10px">Campaña</div><div class="grid" style="grid-template-columns:1fr 1fr;gap:10px">
+      <label for="c-por">Preguntas por nivel<input id="c-por" type="number" min="3" max="12" value="${config.porNivel}"></label>
+      <label for="c-vid">Vidas<input id="c-vid" type="number" min="1" max="5" value="${config.vidas}"></label></div>
+      <div class="fila" style="margin-top:12px"><button class="btn chico pri" type="button" id="g-config">Guardar configuración</button><button class="btn chico" type="button" id="r-banco">Restablecer banco original</button></div></div>
+    <div class="panel"><div class="eti" style="margin-bottom:10px">Importar preguntas (JSON)</div>
+      <textarea id="imp" placeholder='[{"nivel":2,"tipo":"teorica","enunciado":"…","opciones":["a","b","c","d"],"correcta":0,"feedback":["…","…","…","…"],"puntos":100}]'></textarea>
+      <div class="fila" style="margin-top:10px"><button class="btn chico" type="button" id="b-imp">Importar</button><input id="imp-arch" type="file" accept=".json,application/json" aria-label="Archivo JSON"></div></div>
+  </div>
+  <div id="editor"></div>
+  <div class="tabs">${[0,1,2,3,4,5,6,7,8].map(n => `<button class="tab ${filtroNivel===n?"on":""}" type="button" data-f="${n}">${n ? "Nivel " + n : "Todos (" + banco.length + ")"}</button>`).join("")}</div>
+  <div class="tabla"><table><thead><tr><th>ID</th><th>Nivel</th><th>Tipo</th><th>Enunciado</th><th>Respuesta correcta</th><th>Activa</th><th></th></tr></thead><tbody>
+  ${lista.map(q => `<tr><td style="font-family:var(--mono)">${esc(q.id)}</td><td>${q.nivel}</td><td>${TIPO_NOMBRE[q.tipo]||esc(q.tipo)}</td><td class="enun">${esc(q.enunciado)}</td><td>${esc(q.opciones[q.correcta])}</td>
+    <td><input type="checkbox" id="act-${esc(q.id)}" data-act="${esc(q.id)}" ${q.activa!==false?"checked":""} aria-label="Activa"></td><td><button class="btn chico" type="button" data-ed="${esc(q.id)}">Editar</button></td></tr>`).join("")}
+  </tbody></table></div>`;
+  $app.querySelectorAll("[data-f]").forEach(b => b.onclick = () => { filtroNivel = +b.dataset.f; VISTAS.admin(); });
+  $app.querySelectorAll("[data-act]").forEach(c => c.onchange = () => { const q = banco.find(x => x.id === c.dataset.act); q.activa = c.checked; guardarBanco(); });
+  $app.querySelectorAll("[data-ed]").forEach(b => b.onclick = () => editor(banco.find(x => x.id === b.dataset.ed)));
+  document.getElementById("nueva").onclick = () => editor(null);
+  document.getElementById("g-config").onclick = () => {
+    Object.keys(TIPO_NOMBRE).forEach(t => config.expres[t] = Math.max(5, +document.getElementById("t-"+t).value || CONFIG_BASE.expres[t]));
+    config.porNivel = Math.min(12, Math.max(3, +document.getElementById("c-por").value || 5));
+    config.vidas = Math.min(5, Math.max(1, +document.getElementById("c-vid").value || 3));
+    ls.set("mf_config", config); toast("Configuración guardada");
+  };
+  document.getElementById("r-banco").onclick = function(){
+    if(this.dataset.conf){ banco = BANCO_BASE.preguntas.map(q => ({...q})); guardarBanco(); config = JSON.parse(JSON.stringify(CONFIG_BASE)); ls.set("mf_config", config); toast("Banco y configuración restablecidos"); VISTAS.admin(); }
+    else { this.dataset.conf = "1"; this.textContent = "Confirmar: se pierden los cambios"; }
+  };
+  document.getElementById("exportar").onclick = () => {
+    const txt = JSON.stringify(banco, null, 1);
+    (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast("Banco copiado al portapapeles"), () => { const t = document.getElementById("imp"); t.value = txt; t.select(); toast("Copia el JSON desde el cuadro de importación"); });
+  };
+  document.getElementById("b-imp").onclick = () => importar(document.getElementById("imp").value);
+  document.getElementById("imp-arch").onchange = e => { const f = e.target.files[0]; if(f) f.text().then(importar); };
+};
+function guardarBanco(){ ls.set("mf_banco", banco); }
+function validar(q){
+  const err = [];
+  if(!(q.nivel >= 1 && q.nivel <= 8)) err.push("nivel entre 1 y 8");
+  if(!TIPO_NOMBRE[q.tipo]) err.push("tipo válido (teorica, contrarreloj, numerica, caso, reto)");
+  if(!q.enunciado || q.enunciado.length < 10) err.push("enunciado de al menos 10 caracteres");
+  if(!Array.isArray(q.opciones) || q.opciones.length !== 4 || q.opciones.some(o => !String(o).trim())) err.push("4 opciones con texto");
+  if(!(q.correcta >= 0 && q.correcta <= 3)) err.push("índice de respuesta correcta 0–3");
+  return err;
+}
+function normalizar(q){
+  const base = {teorica:100, contrarreloj:150, numerica:200, caso:250, reto:300};
+  q.nivel = +q.nivel; q.correcta = +q.correcta; q.tema = NIVELES[q.nivel]; q.puntos = +q.puntos || base[q.tipo];
+  q.tiempo = CONFIG_BASE.campana[q.tipo]; q.pasos = q.pasos || []; q.explicacion = q.explicacion || "";
+  q.feedback = (q.feedback && q.feedback.length === 4) ? q.feedback : q.opciones.map((_,k) => k === q.correcta ? "¡Correcto! " + q.explicacion : "Revisa el procedimiento. " + q.explicacion);
+  return q;
+}
+function importar(txt){
+  let arr; try{ arr = JSON.parse(txt); }catch(e){ toast("El texto no es un JSON válido"); return; }
+  if(!Array.isArray(arr)) arr = arr.preguntas || [arr];
+  let ok = 0, malos = 0; let n = banco.length;
+  arr.forEach(q => { if(validar(q).length){ malos++; return; } q = normalizar({...q}); q.id = q.id && !banco.some(x=>x.id===q.id) ? q.id : "N" + String(++n).padStart(3,"0"); banco.push(q); ok++; });
+  guardarBanco(); toast(`${ok} importadas${malos ? ", " + malos + " con errores" : ""}`); VISTAS.admin();
+}
+function editor(q){
+  const nuevo = !q; q = q || {nivel:filtroNivel||1, tipo:"teorica", enunciado:"", opciones:["","","",""], correcta:0, feedback:["","","",""], explicacion:""};
+  const el = document.getElementById("editor");
+  el.innerHTML = `<form class="panel marco grid" id="f-ed" style="margin-bottom:18px">
+    <div class="eti">${nuevo ? "Nueva pregunta" : "Editar " + esc(q.id)}</div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
+      <label for="e-niv">Nivel<select id="e-niv">${Object.entries(NIVELES).map(([n,nom]) => `<option value="${n}" ${+n===q.nivel?"selected":""}>${n}. ${esc(nom)}</option>`).join("")}</select></label>
+      <label for="e-tip">Tipo<select id="e-tip">${Object.entries(TIPO_NOMBRE).map(([t,nom]) => `<option value="${t}" ${t===q.tipo?"selected":""}>${nom}</option>`).join("")}</select></label>
+      <label for="e-cor">Respuesta correcta<select id="e-cor">${[0,1,2,3].map(k => `<option value="${k}" ${k===q.correcta?"selected":""}>${"ABCD"[k]}</option>`).join("")}</select></label></div>
+    <label for="e-enu">Enunciado<textarea id="e-enu" style="font-family:var(--cuerpo)">${esc(q.enunciado)}</textarea></label>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">${[0,1,2,3].map(k => `<div class="grid" style="gap:6px"><label for="e-o${k}">Opción ${"ABCD"[k]}<input id="e-o${k}" type="text" value="${esc(q.opciones[k])}"></label><label for="e-f${k}">Retroalimentación ${"ABCD"[k]}<input id="e-f${k}" type="text" value="${esc((q.feedback[k]||"").replace(/^¡Correcto! /,""))}"></label></div>`).join("")}</div>
+    <label for="e-exp">Explicación general<textarea id="e-exp" style="font-family:var(--cuerpo)">${esc(q.explicacion)}</textarea></label>
+    <div class="fila"><button class="btn pri" type="submit">Guardar pregunta</button><button class="btn" type="button" id="e-can">Cancelar</button></div></form>`;
+  el.scrollIntoView({behavior:"smooth"});
+  document.getElementById("e-can").onclick = () => el.innerHTML = "";
+  document.getElementById("f-ed").onsubmit = e => {
+    e.preventDefault();
+    const v = id => document.getElementById(id).value.trim();
+    const d = {nivel:+v("e-niv"), tipo:v("e-tip"), correcta:+v("e-cor"), enunciado:v("e-enu"), opciones:[0,1,2,3].map(k=>v("e-o"+k)), explicacion:v("e-exp")};
+    const err = validar(d); if(err.length){ toast("Falta: " + err[0]); return; }
+    d.feedback = [0,1,2,3].map(k => (k===d.correcta ? "¡Correcto! " : "") + (v("e-f"+k) || d.explicacion));
+    if(nuevo){ d.id = "N" + String(banco.length+1).padStart(3,"0"); banco.push(normalizar(d)); }
+    else Object.assign(q, normalizar({...q, ...d}));
+    guardarBanco(); toast("Pregunta guardada"); VISTAS.admin();
+  };
+}
+
+document.addEventListener("keydown", e => {
+  if(vista !== "juego" || !juego || e.target.closest("input,textarea,select")) return;
+  const k = "abcd1234".indexOf(e.key.toLowerCase());
+  if(k >= 0 && !juego.respondida){ const op = k % 4; if(!juego.eliminadas.includes(op)) responder(op); }
+  else if(e.key === "Enter" && juego.respondida){ e.preventDefault(); siguiente(); }
+});
+/* ================= Arranque ================= */
+pintarPiloto();
+ir("inicio");
+</script>
+
+</body>
+</html>
